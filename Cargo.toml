@@ -1,0 +1,6 @@
+[package]
+name = "fuzzy-phrase"
+version = "0.1.0"
+authors = ["Andrew Pendleton <andrew@mapbox.com>"]
+
+[dependencies]
