@@ -1,7 +1,5 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+extern crate fst;
+
+mod prefix;
+pub use prefix::PrefixSet;
+pub use prefix::PrefixSetBuilder;

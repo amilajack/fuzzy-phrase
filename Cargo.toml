@@ -4,3 +4,7 @@ version = "0.1.0"
 authors = ["Andrew Pendleton <andrew@mapbox.com>"]
 
 [dependencies]
+fst = "0.3.0"
+
+[dev-dependencies]
+reqwest = "0.8.5"
