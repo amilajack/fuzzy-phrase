@@ -42,4 +42,45 @@ impl PrefixSet {
         }
         Some((start, out.cat(node.final_output())))
     }
+
+    pub fn get_by_id(&self, id: raw::Output) -> Option<Vec<u8>> {
+        let mut id = id.clone();
+        let fst = &self.as_fst();
+        let mut node = fst.root();
+        let mut key: Vec<u8> = Vec::new();
+
+        loop {
+            let mut next_node: Option<_> = None;
+            {
+                let mut transitions = node.transitions().peekable();
+                while let Some(current) = transitions.next() {
+                    let found = match transitions.peek() {
+                        Some(next) => next.out > id,
+                        None => true,
+                    };
+                    if found {
+                        if current.out > id {
+                            return None;
+                        }
+
+                        id = id.sub(current.out);
+                        key.push(current.inp);
+
+                        let nn = fst.node(current.addr);
+                        if id.value() == 0 && nn.is_final() {
+                            return Some(key);
+                        } else {
+                            next_node = Some(nn);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            match next_node {
+                Some(n) => node = n,
+                None => return None,
+            }
+        }
+    }
 }

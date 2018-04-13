@@ -1,5 +1,6 @@
 #[cfg(test)] extern crate reqwest;
 use super::PrefixSet;
+use fst::raw;
 
 #[test]
 fn test() {
@@ -38,6 +39,24 @@ fn test() {
             pf.contains_prefix(prefix)
         }),
         "PrefixSet contains prefixes of all words as prefixes"
+    );
+
+    assert!(
+        words_with_ids.iter().all(|ref t| {
+            match pf.get_by_id(raw::Output::new(t.1)) {
+                Some(v) => match String::from_utf8(v) {
+                    Ok(s) => s == t.0,
+                    _ => false
+                },
+                None => false
+            }
+        }),
+        "PrefixSet inverse lookups return the expected result"
+    );
+
+    assert!(
+        pf.get_by_id(raw::Output::new(words.len() as u64)).is_none(),
+        "PrefixSet inverse lookup returns none on out of bounds lookup"
     );
 
     let be_subset: Vec<(String, u64)> = words_with_ids.iter().filter(|ref t| t.0.starts_with("be")).cloned().collect();
