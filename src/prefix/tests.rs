@@ -63,7 +63,7 @@ fn test() {
     let be_range = pf.get_prefix_range("be").unwrap();
     assert_eq!(
         (be_range.0.value(), be_range.1.value()),
-        (be_subset[0].1, be_subset.last().unwrap().1),
+        (be_subset[0].1, be_subset.last().unwrap().1 + 1),
         "Prefix range for string 'be' behaves as expected"
     );
 

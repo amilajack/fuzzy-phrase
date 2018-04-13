@@ -40,7 +40,7 @@ impl PrefixSet {
             out = out.cat(t.out);
             node = fst.node(t.addr);
         }
-        Some((start, out.cat(node.final_output())))
+        Some((start, out.cat(node.final_output()).cat(raw::Output::new(1))))
     }
 
     pub fn get_by_id(&self, id: raw::Output) -> Option<Vec<u8>> {
