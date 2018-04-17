@@ -33,7 +33,7 @@ impl Symspell {
         println!("{:?}, {:?}", self.word_list, self.id_list);
     }
     //creates delete variants for every word in the list
-    fn create_variants<T>(words: T) -> Vec<(String, usize)> where T: IntoIterator {
+    fn create_variants<'a, T>(words: T) -> Vec<(String, usize)> where T: IntoIterator<Item=&'a &'a str> {
 
         let mut word_variants = Vec::<(String, usize)>::new();
         //treating &words as a slice, since, slices are read-only objects
