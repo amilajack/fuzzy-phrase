@@ -5,6 +5,8 @@ authors = ["Andrew Pendleton <andrew@mapbox.com>"]
 
 [dependencies]
 fst = "0.3.0"
+memmap = "0.6.2"
+itertools = "0.7.8"
 
 [dev-dependencies]
 reqwest = "0.8.5"
