@@ -1,4 +1,5 @@
 extern crate fst;
+extern crate byteorder;
 
 mod prefix;
 pub use prefix::PrefixSet;
