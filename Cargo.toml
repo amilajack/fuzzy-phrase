@@ -5,6 +5,12 @@ authors = ["Andrew Pendleton <andrew@mapbox.com>"]
 
 [dependencies]
 fst = "0.3.0"
+itertools = "0.7.8"
 
 [dev-dependencies]
 reqwest = "0.8.5"
+criterion = "0.2"
+
+[[bench]]
+name = "benchmarks"
+harness = false
