@@ -10,9 +10,7 @@ pub fn chop_int(num: u64) -> Vec<u8> {
 pub fn three_byte_encode(num: u64) -> Vec<u8> {
     let mut byte_vec: Vec<u8> = Vec::new();
     let chopped: Vec<u8> = chop_int(num);
-    byte_vec.push(chopped[5]);
-    byte_vec.push(chopped[6]);
-    byte_vec.push(chopped[7]);
+    byte_vec.extend_from_slice(&chopped.as_slice()[5..8]);
     byte_vec
 }
 
