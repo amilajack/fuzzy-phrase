@@ -55,12 +55,11 @@ impl Symspell {
                 multids.push((&opts).iter().map(|t| t.1).collect::<Vec<_>>());
                 multids.len() - 1 + BIG_NUMBER
             };
-
-            let multi_idx = Symspell { id_list: multids.to_vec() };
-            let mut mf_wtr = BufWriter::new(File::create("id.msg")?);
-            multi_idx.serialize(&mut Serializer::new(mf_wtr))?;
             build.insert(key, id as u64);
         }
+        let multi_idx = Symspell { id_list: multids.to_vec() };
+        let mut mf_wtr = BufWriter::new(File::create("id.msg")?);
+        multi_idx.serialize(&mut Serializer::new(mf_wtr))?;
         build.finish()?;
         Ok(())
     }
