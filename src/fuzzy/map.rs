@@ -1,5 +1,4 @@
 use fst::{IntoStreamer, Streamer, Set, Map, MapBuilder, Automaton};
-use std::fmt;
 use std::io::prelude::*;
 use fst::raw;
 use fst::Error as FstError;
@@ -104,5 +103,3 @@ impl<'s, 'a, A: Automaton> IntoStreamer<'a> for StreamBuilder<'s, A> {
         Stream(self.0.into_stream())
     }
 }
-
-fn main() {}

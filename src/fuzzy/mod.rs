@@ -4,8 +4,8 @@ use std::io::{self, Write};
 use std::fs::File;
 use std::error::Error;
 use itertools::Itertools;
-use std::io::Read;
-use memmap::Mmap;
+use serde::{Deserialize, Serialize};
+use rmps::{Deserializer, Serializer};
 
 mod map;
 pub use self::map::FuzzySetBuilder;
@@ -33,8 +33,10 @@ impl IntoIterator for VectorCollection {
     }
 }
 
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone)]
 struct Symspell {
-    word_list: Vec<String>,
+    // word_list: Vec<String>,
     id_list: Vec<Vec<usize>>
 }
 
@@ -53,14 +55,13 @@ impl Symspell {
                 multids.push((&opts).iter().map(|t| t.1).collect::<Vec<_>>());
                 multids.len() - 1 + BIG_NUMBER
             };
-            println!("{:?}", key);
+
+            let multi_idx = Symspell { id_list: multids.to_vec() };
+            let mut mf_wtr = BufWriter::new(File::create("id.msg")?);
+            multi_idx.serialize(&mut Serializer::new(mf_wtr))?;
             build.insert(key, id as u64);
         }
         build.finish()?;
-        println!("Done building structure!");
-        println!("{:?}", multids);
-        let mut file = File::open("x_sym.fst")?;
-        let mmap = unsafe { Mmap::map(&file).expect("failed to write to disk") };
         Ok(())
     }
     //creates delete variants for every word in the list
@@ -81,6 +82,7 @@ impl Symspell {
         word_variants.sort();
         word_variants
     }
+    fn lookup() {}
 }
 
 #[test]
