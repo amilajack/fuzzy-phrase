@@ -8,15 +8,14 @@ pub fn chop_int(num: u64) -> Vec<u8> {
 }
 
 pub fn three_byte_encode(num: u64) -> Vec<u8> {
-    let mut byte_vec: Vec<u8> = Vec::new();
     let chopped: Vec<u8> = chop_int(num);
-    byte_vec.extend_from_slice(&chopped.as_slice()[5..8]);
-    byte_vec
+    let three_bytes: Vec<u8> = chopped[5..8].to_vec();
+    three_bytes
 }
 
-pub fn three_byte_decode(byte_vec: &[u8]) -> u64 {
+pub fn three_byte_decode(three_bytes: &[u8]) -> u64 {
     let mut padded_byte_vec: Vec<u8> = vec![0u8; 5];
-    padded_byte_vec.extend_from_slice(byte_vec);
+    padded_byte_vec.extend_from_slice(three_bytes);
     let mut reader = Cursor::new(padded_byte_vec);
     reader.read_u64::<BigEndian>().unwrap()
 }
