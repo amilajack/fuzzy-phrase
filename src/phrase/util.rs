@@ -14,11 +14,9 @@ pub fn three_byte_encode(num: u64) -> Vec<u8> {
     byte_vec
 }
 
-pub fn three_byte_decode(byte_vec: Vec<u8>) -> u64 {
+pub fn three_byte_decode(byte_vec: &[u8]) -> u64 {
     let mut padded_byte_vec: Vec<u8> = vec![0u8; 5];
-    for b in byte_vec.into_iter() {
-        padded_byte_vec.push(b);
-    }
+    padded_byte_vec.extend_from_slice(byte_vec);
     let mut reader = Cursor::new(padded_byte_vec);
     reader.read_u64::<BigEndian>().unwrap()
 }
@@ -94,7 +92,7 @@ mod tests {
     #[test]
     fn three_bytes_to_large_integer() {
         let three_bytes: Vec<u8> = vec![ 8u8, 145u8, 120u8];
-        let n: u64 = three_byte_decode(three_bytes);
+        let n: u64 = three_byte_decode(&three_bytes);
         assert_eq!(
             561_528u64,
             n
