@@ -5,6 +5,7 @@ authors = ["Andrew Pendleton <andrew@mapbox.com>"]
 
 [dependencies]
 fst = "0.3.0"
+byteorder = "1.2.2"
 
 [dev-dependencies]
 reqwest = "0.8.5"
