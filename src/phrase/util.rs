@@ -26,23 +26,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn byte_literals_demo() {
-        let x: u8 = 255;
-
-        assert_eq!(0b1111_1111, x);
-
-        let s = format!("{:b}", x);
-        assert_eq!("11111111", s);
-
-        let y: u8 = 0;
-        assert_eq!(0b0000_0000, y);
-        assert_eq!(0b________0, y);
-
-        let max64: u64 = u64::max_value();
-        assert_eq!(18_446_744_073_709_551_615, max64);
-    }
-
-    #[test]
     fn chop_smallest_int_to_bytes() {
         let n: u64 = u64::min_value();
         let chopped: Vec<u8> = chop_int(n);
