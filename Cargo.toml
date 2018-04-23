@@ -6,6 +6,7 @@ authors = ["Andrew Pendleton <andrew@mapbox.com>"]
 [dependencies]
 fst = "0.3.0"
 byteorder = "1.2.2"
+itertools = "0.7.8"
 
 [dependencies.memmap]
 version = "0.6.0"
@@ -13,7 +14,12 @@ optional = true
 
 [dev-dependencies]
 reqwest = "0.8.5"
+criterion = "0.2"
 
 [features]
 default = ["mmap"]
 mmap = ["memmap"]
+
+[[bench]]
+name = "benchmarks"
+harness = false
