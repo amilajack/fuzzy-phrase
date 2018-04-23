@@ -60,6 +60,17 @@ mod tests {
     }
 
     #[test]
+    fn medium_integer_to_three_bytes() {
+        // the number we're using is arbitrary.
+        let n: u64 = 61_528;
+        let three_bytes: Vec<u8> = three_byte_encode(n);
+        assert_eq!(
+            vec![ 0u8, 240u8, 88u8],
+            three_bytes
+        );
+    }
+
+    #[test]
     fn large_integer_to_three_bytes() {
         // the number we're using is arbitrary. happens to be the number of distinct words in
         // us-address, so gives us an idea of the cardinality we're dealing with.
