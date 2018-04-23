@@ -20,10 +20,10 @@ mod tests {
         build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
         let bytes = build.into_inner().unwrap();
 
-        let phraseSet = PhraseSet::from_bytes(bytes).unwrap();
+        let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
         let mut keys = vec![];
-        let mut stream = phraseSet.into_stream();
+        let mut stream = phrase_set.into_stream();
         while let Some(key) = stream.next() {
             keys.push(key.to_vec());
         }
