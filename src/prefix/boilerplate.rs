@@ -1,5 +1,7 @@
 use std::fmt;
 use std::io::prelude::*;
+#[cfg(feature = "mmap")]
+use std::path::Path;
 use fst::{IntoStreamer, Streamer};
 use fst::raw;
 use fst::Error as FstError;
