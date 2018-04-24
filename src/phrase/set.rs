@@ -9,7 +9,7 @@ use fst::raw;
 use fst::{IntoStreamer, Streamer};
 use fst::Error as FstError;
 
-use super::util::{three_byte_encode};
+use super::util::{phrase_to_key, key_to_phrase};
 
 pub struct PhraseSet(raw::Fst);
 
@@ -167,9 +167,7 @@ impl<W: io::Write> PhraseSetBuilder<W> {
 
     /// Insert a phrase, specified as an array of word identifiers.
     pub fn insert(&mut self, phrase: &[u64]) -> Result<(), FstError> {
-        let key: Vec<u8> = phrase.into_iter()
-                        .flat_map(|word| three_byte_encode(*word))
-                        .collect();
+        let key = phrase_to_key(phrase);
         self.0.add(key)
     }
 

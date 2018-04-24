@@ -20,6 +20,24 @@ pub fn three_byte_decode(three_bytes: &[u8]) -> u64 {
     reader.read_u64::<BigEndian>().unwrap()
 }
 
+pub fn phrase_to_key(phrase: &[u64]) -> Vec<u8> {
+    let key: Vec<u8> = phrase.into_iter()
+                    .flat_map(|word| three_byte_encode(*word))
+                    .collect();
+    key
+}
+
+pub fn key_to_phrase(key: &[u8]) -> Vec<u64> {
+    let mut phrase: Vec<u64> = vec![];
+    let mut i = 0;
+    while i < (key.len() - 2) {
+        let word = &key[i..i+3];
+        phrase.push(three_byte_decode(&word));
+        i += 3;
+    }
+    phrase
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +107,34 @@ mod tests {
         assert_eq!(
             561_528u64,
             n
+        );
+    }
+
+    #[test]
+    fn convert_phrase_to_key() {
+        let phrase = [61_528_u64, 561_528u64, 1u64];
+        let key = phrase_to_key(&phrase);
+        assert_eq!(
+            vec![
+                0u8, 240u8, 88u8,    // 61_528
+                8u8, 145u8, 120u8,   // 561_528
+                0u8, 0u8,   1u8      // 1
+            ],
+            key
+        );
+    }
+
+    #[test]
+    fn convert_key_to_phrase() {
+        let key =vec![
+            0u8, 240u8, 88u8,    // 61_528
+            8u8, 145u8, 120u8,   // 561_528
+            0u8, 0u8,   1u8      // 1
+        ];
+        let phrase = key_to_phrase(&key);
+        assert_eq!(
+            vec![61_528_u64, 561_528u64, 1u64],
+            phrase
         );
     }
 
