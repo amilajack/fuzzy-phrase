@@ -22,7 +22,7 @@ impl PhraseSet {
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, fst::Error> {
-        fst::Set::from_bytes(bytes).map(PhraseSet)
+        Set::from_bytes(bytes).map(PhraseSet)
     }
 
     #[cfg(feature = "mmap")]
