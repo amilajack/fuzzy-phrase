@@ -1,10 +1,62 @@
 pub mod util;
-pub mod set;
 
 use std::fs::File;
 use std::io;
-use self::set::{PhraseSet, PhraseSetBuilder};
+use fst;
 use fst::{Streamer, IntoStreamer};
+
+use self::util::phrase_to_key;
+
+pub struct PhraseSet(fst::Set);
+
+impl PhraseSet {
+
+    /// Test membership of a single phrase
+    pub fn contains(&self, phrase: &[u64]) -> bool {
+        let key = phrase_to_key(&phrase);
+        self.0.contains(key)
+    }
+
+    /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, fst::Error> {
+        fst::Set::from_bytes(bytes).map(PhraseSet)
+    }
+
+}
+
+impl<'s, 'a> IntoStreamer<'a> for &'s PhraseSet {
+    type Item = &'a [u8];
+    type Into = fst::set::Stream<'s>;
+
+    fn into_stream(self) -> Self::Into {
+        self.0.stream()
+    }
+}
+
+pub struct PhraseSetBuilder<W>(fst::SetBuilder<W>);
+
+impl PhraseSetBuilder<Vec<u8>> {
+    pub fn memory() -> Self {
+        // PhraseSetBuilder(fst::SetBuilder(fst::raw::Builder::memory()))
+        PhraseSetBuilder(fst::SetBuilder::memory())
+    }
+
+}
+
+impl<W: io::Write> PhraseSetBuilder<W> {
+
+    /// Insert a phrase, specified as an array of word identifiers.
+    pub fn insert(&mut self, phrase: &[u64]) -> Result<(), fst::Error> {
+        let key = phrase_to_key(phrase);
+        self.0.insert(key)
+    }
+
+    pub fn into_inner(self) -> Result<W, fst::Error> {
+        self.0.into_inner()
+    }
+
+}
+
 
 #[cfg(test)]
 mod tests {
