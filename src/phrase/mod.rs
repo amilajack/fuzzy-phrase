@@ -1,18 +1,27 @@
 pub mod util;
 pub mod word;
 
-use std::fs::File;
 use std::io;
 #[cfg(feature = "mmap")]
 use std::path::Path;
 
 use fst;
-use fst::{Streamer, IntoStreamer, Set, SetBuilder};
+use fst::{IntoStreamer, Set, SetBuilder};
 
 use self::util::phrase_to_key;
 
 pub struct PhraseSet(Set);
 
+/// PhraseSet is a lexicographically ordered set of phrases.
+///
+/// Phrases are sequences of words, where each word is represented as an integer. The integers
+/// correspond to FuzzyMap values. Due to limitations in the fst library, however, the integers are
+/// encoded as a series of 3 bytes.  For example, the three-word phrase "1## Main Street" will be
+/// represented over 9 transitions, with one byte each.
+///
+/// tokens:      1##          main          street
+/// integers:    21           457           109821
+/// three bytes: [0, 0, 21]   [0, 1, 201]   [1, 172, 253]
 impl PhraseSet {
 
     /// Test membership of a single phrase
@@ -77,6 +86,8 @@ impl<W: io::Write> PhraseSetBuilder<W> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use fst::Streamer;
     use super::*;
 
     #[test]
@@ -94,7 +105,6 @@ mod tests {
         while let Some(key) = stream.next() {
             keys.push(key.to_vec());
         }
-        let comp: Vec<Vec<u8>> = vec![vec![0u8, 0u8, 0u8]];
         assert_eq!(
             keys,
             vec![
@@ -119,7 +129,7 @@ mod tests {
 
     #[test]
     fn insert_phrases_file() {
-        let mut wtr = io::BufWriter::new(File::create("/tmp/phrase-set.fst").unwrap());
+        let wtr = io::BufWriter::new(File::create("/tmp/phrase-set.fst").unwrap());
 
         let mut build = PhraseSetBuilder::new(wtr).unwrap();
         build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
@@ -134,7 +144,6 @@ mod tests {
         while let Some(key) = stream.next() {
             keys.push(key.to_vec());
         }
-        let comp: Vec<Vec<u8>> = vec![vec![0u8, 0u8, 0u8]];
         assert_eq!(
             keys,
             vec![
