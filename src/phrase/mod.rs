@@ -1,4 +1,5 @@
 pub mod util;
+pub mod word;
 
 use std::fs::File;
 use std::io;
