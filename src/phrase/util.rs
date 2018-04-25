@@ -8,6 +8,7 @@ pub fn chop_int(num: u64) -> Vec<u8> {
 }
 
 pub fn three_byte_encode(num: u64) -> Vec<u8> {
+    debug_assert!(num < 16_777_216);
     let chopped: Vec<u8> = chop_int(num);
     let three_bytes: Vec<u8> = chopped[5..8].to_vec();
     three_bytes
@@ -98,6 +99,14 @@ mod tests {
             vec![ 8u8, 145u8, 120u8],
             three_bytes
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn integer_is_to_large() {
+        // we should panic if we try to encode something larger than (2^24 - 1)
+        let n: u64 = 16_777_216;
+        let three_bytes: Vec<u8> = three_byte_encode(n);
     }
 
     #[test]
