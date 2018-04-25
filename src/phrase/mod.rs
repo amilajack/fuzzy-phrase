@@ -85,6 +85,8 @@ impl<W: io::Write> PhraseSetBuilder<W> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use fst::Streamer;
     use super::*;
 
     #[test]
@@ -102,7 +104,6 @@ mod tests {
         while let Some(key) = stream.next() {
             keys.push(key.to_vec());
         }
-        let comp: Vec<Vec<u8>> = vec![vec![0u8, 0u8, 0u8]];
         assert_eq!(
             keys,
             vec![
@@ -127,7 +128,7 @@ mod tests {
 
     #[test]
     fn insert_phrases_file() {
-        let mut wtr = io::BufWriter::new(File::create("/tmp/phrase-set.fst").unwrap());
+        let wtr = io::BufWriter::new(File::create("/tmp/phrase-set.fst").unwrap());
 
         let mut build = PhraseSetBuilder::new(wtr).unwrap();
         build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
@@ -142,7 +143,6 @@ mod tests {
         while let Some(key) = stream.next() {
             keys.push(key.to_vec());
         }
-        let comp: Vec<Vec<u8>> = vec![vec![0u8, 0u8, 0u8]];
         assert_eq!(
             keys,
             vec![

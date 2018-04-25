@@ -22,10 +22,9 @@ pub fn three_byte_decode(three_bytes: &[u8]) -> u64 {
 }
 
 pub fn phrase_to_key(phrase: &[u64]) -> Vec<u8> {
-    let key: Vec<u8> = phrase.into_iter()
-                    .flat_map(|word| three_byte_encode(*word))
-                    .collect();
-    key
+    phrase.into_iter()
+          .flat_map(|word| three_byte_encode(*word))
+          .collect()
 }
 
 pub fn key_to_phrase(key: &[u8]) -> Vec<u64> {
@@ -106,7 +105,7 @@ mod tests {
     fn integer_is_to_large() {
         // we should panic if we try to encode something larger than (2^24 - 1)
         let n: u64 = 16_777_216;
-        let three_bytes: Vec<u8> = three_byte_encode(n);
+        three_byte_encode(n);
     }
 
     #[test]
