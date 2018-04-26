@@ -1,23 +1,78 @@
-use fst::{IntoStreamer, Streamer, Set, Map, MapBuilder, Automaton};
+use fst::{IntoStreamer, Streamer, Automaton};
 use std::io::prelude::*;
 use fst::raw;
 use fst::Error as FstError;
 use fst::automaton::{AlwaysMatch};
+#[cfg(feature = "mmap")]
+use std::path::Path;
 
+pub struct FuzzyMap(raw::Fst);
 
-pub struct FuzzySetBuilder<W> {
-    builder: raw::Builder<W>
-}
+impl FuzzyMap {
+    // these are lifted from upstream Set
+    #[cfg(feature = "mmap")]
+    pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
+        raw::Fst::from_path(path).map(FuzzyMap)
+    }
 
-impl FuzzySetBuilder<Vec<u8>> {
-    pub fn memory() -> Self {
-        FuzzySetBuilder { builder: raw::Builder::memory() }
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, FstError> {
+        raw::Fst::from_bytes(bytes).map(FuzzyMap)
+    }
+
+    // pub fn from_iter<T, I>(iter: I) -> Result<Self, FstError>
+    //         where T: AsRef<[u8]>, I: IntoIterator<Item=T> {
+    //     let mut builder = FuzzyMapBuilder::memory();
+    //     builder.extend_iter(iter)?;
+    //     FuzzyMap::from_bytes(builder.into_inner()?)
+    // }
+
+    pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
+        self.0.contains_key(key)
+    }
+
+    pub fn stream(&self) -> Stream {
+        Stream(self.0.stream())
+    }
+
+    pub fn range(&self) -> StreamBuilder {
+        StreamBuilder(self.0.range())
+    }
+
+    pub fn search<A: Automaton>(&self, aut: A) -> StreamBuilder<A> {
+        StreamBuilder(self.0.search(aut))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn as_fst(&self) -> &raw::Fst {
+        &self.0
+    }
+
+    // this one is from Map
+    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<u64> {
+        self.0.get(key).map(|output| output.value())
     }
 }
 
-impl<W: Write> FuzzySetBuilder<W> {
-    pub fn new(fst_wtr: W) -> Result<FuzzySetBuilder<W>, FstError> {
-        Ok(FuzzySetBuilder { builder: raw::Builder::new_type(fst_wtr, 0)? })
+pub struct FuzzyMapBuilder<W> {
+    builder: raw::Builder<W>
+}
+
+impl FuzzyMapBuilder<Vec<u8>> {
+    pub fn memory() -> Self {
+        FuzzyMapBuilder { builder: raw::Builder::memory() }
+    }
+}
+
+impl<W: Write> FuzzyMapBuilder<W> {
+    pub fn new(fst_wtr: W) -> Result<FuzzyMapBuilder<W>, FstError> {
+        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)? })
     }
 
     pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: u64) -> Result<(), FstError> {

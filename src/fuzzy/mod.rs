@@ -1,14 +1,18 @@
-use fst::{IntoStreamer, Streamer, Set, Map, MapBuilder, Automaton};
+// use fst::{IntoStreamer, Streamer, Set, Map, MapBuilder, Automaton};
 use std::io::{BufReader, BufWriter};
-use std::io::{self, Write};
+use std::io::prelude::*;
+// use std::io::{Write};
 use std::fs::File;
 use std::error::Error;
 use itertools::Itertools;
+// use strsim::levenshtein;
+// use std::iter::once;
 use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
 
 mod map;
-pub use self::map::FuzzySetBuilder;
+pub use self::map::FuzzyMapBuilder;
+pub use self::map::FuzzyMap;
 
 static BIG_NUMBER: usize = 1 << 30;
 
@@ -45,7 +49,7 @@ impl Symspell {
     fn build<'a, T>(words: T) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
         let word_variants = Symspell::create_variants(words);
         let wtr = BufWriter::new(File::create("x_sym.fst")?);
-        let mut build = FuzzySetBuilder::new(wtr)?;
+        let mut build = FuzzyMapBuilder::new(wtr)?;
         let mut multids = Vec::<Vec<usize>>::new();
         for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
@@ -81,18 +85,64 @@ impl Symspell {
         word_variants.sort();
         word_variants
     }
-    fn lookup() {}
+
+    fn lookup(query: &str) -> Result<(), Box<Error>> {
+
+        let mut query_variants = Vec::new();
+        let mut matches = Vec::<usize>::new();
+
+        //read all the bytes in the fst file
+        let map = unsafe { FuzzyMap::from_path("x_sym.fst")? };
+
+        //create variants of the query itself
+        for (j, _) in query.char_indices() {
+            let mut variant = String::with_capacity(query.len() - 1);
+            let parts = query.split_at(j);
+            variant.push_str(parts.0);
+            variant.extend(parts.1.chars().skip(1));
+            query_variants.push(variant);
+        }
+
+        let mut mf : Symspell;
+        let mf_file = File::open("id.msg")?;
+        let mut mf_reader = BufReader::new(mf_file);
+        let mf = Deserialize::deserialize(&mut Deserializer::new(mf_reader))?;
+
+        for i in query_variants {
+            match map.get(&i) {
+                Some (idx) => {
+                    let uidx = idx as usize;
+                    if uidx < BIG_NUMBER {
+                        matches.push(uidx);
+                    } else {
+                        for x in &(mf.id_list)[uidx - BIG_NUMBER] {
+                            matches.push(*x);
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+        matches.sort();
+        println!("{:?}", matches);
+        Ok(())
+    }
 }
 
 #[test]
-fn use_symspell() {
+fn structure_building() {
     let data = reqwest::get("https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000")
        .expect("tried to download data")
        .text().expect("tried to decode the data");
     let mut words = data.trim().split("\n").collect::<Vec<&str>>();
     words.sort();
-    //create variants
-    let wlist = Symspell::build(&words);
+    let built = Symspell::build(&words);
+}
+#[test]
+
+fn reader() {
+    let query = "albazan";
+    Symspell::lookup(&query);
 }
 
 fn main() {}
