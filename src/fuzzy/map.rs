@@ -19,12 +19,12 @@ impl FuzzyMap {
         raw::Fst::from_bytes(bytes).map(FuzzyMap)
     }
 
-    // pub fn from_iter<T, I>(iter: I) -> Result<Self, FstError>
-    //         where T: AsRef<[u8]>, I: IntoIterator<Item=T> {
-    //     let mut builder = FuzzyMapBuilder::memory();
-    //     builder.extend_iter(iter)?;
-    //     FuzzyMap::from_bytes(builder.into_inner()?)
-    // }
+    pub fn from_iter<T, I>(iter: I) -> Result<Self, FstError>
+            where T: AsRef<[u8]>, I: IntoIterator<Item=(T, u64)> {
+        let mut builder = FuzzyMapBuilder::memory();
+        builder.extend_iter(iter)?;
+        FuzzyMap::from_bytes(builder.into_inner()?)
+    }
 
     pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
         self.0.contains_key(key)
@@ -78,6 +78,12 @@ impl<W: Write> FuzzyMapBuilder<W> {
     pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: u64) -> Result<(), FstError> {
         self.builder.insert(key, ids)?;
         Ok(())
+    }
+
+    pub fn extend_iter<T, I>(&mut self, iter: I) -> Result<(), FstError>
+            where T: AsRef<[u8]>, I: IntoIterator<Item=(T, u64)> {
+                self.builder.extend_iter(iter.into_iter().map(|(k, v)| (k, raw::Output::new(v))));
+                Ok(())
     }
 
     pub fn finish(self) -> Result<(), FstError> {

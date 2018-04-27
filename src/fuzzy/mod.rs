@@ -40,7 +40,7 @@ impl IntoIterator for VectorCollection {
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[derive(Clone)]
 struct Symspell {
-    // word_list: Vec<String>,
+    word_list: Option<Vec<String>>,
     id_list: Vec<Vec<usize>>
 }
 
@@ -61,7 +61,7 @@ impl Symspell {
             };
             build.insert(key, id as u64);
         }
-        let multi_idx = Symspell { id_list: multids.to_vec() };
+        let multi_idx = Symspell { word_list: None, id_list: multids.to_vec() };
         let mut mf_wtr = BufWriter::new(File::create("id.msg")?);
         multi_idx.serialize(&mut Serializer::new(mf_wtr))?;
         build.finish()?;
@@ -72,7 +72,7 @@ impl Symspell {
         let mut word_variants = Vec::<(String, usize)>::new();
         //treating &words as a slice, since, slices are read-only objects
         for (i, &word) in words.into_iter().enumerate() {
-        //let x: () = (*word).to_owned();
+
             word_variants.push((word.to_owned(), i));
             for (j, _) in word.char_indices() {
                 let mut s = String::with_capacity(word.len() - 1);
@@ -103,10 +103,10 @@ impl Symspell {
             query_variants.push(variant);
         }
 
-        let mut mf : Symspell;
+        let mf : Symspell;
         let mf_file = File::open("id.msg")?;
         let mut mf_reader = BufReader::new(mf_file);
-        let mf = Deserialize::deserialize(&mut Deserializer::new(mf_reader))?;
+        mf = Deserialize::deserialize(&mut Deserializer::new(mf_reader))?;
 
         for i in query_variants {
             match map.get(&i) {
@@ -124,7 +124,6 @@ impl Symspell {
             }
         }
         matches.sort();
-        println!("{:?}", matches);
         Ok(())
     }
 }
@@ -139,10 +138,15 @@ fn structure_building() {
     let built = Symspell::build(&words);
 }
 #[test]
-
 fn reader() {
     let query = "albazan";
-    Symspell::lookup(&query);
+    let data = reqwest::get("https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000")
+       .expect("tried to download data")
+       .text().expect("tried to decode the data");
+    let mut words = data.trim().split("\n").collect::<Vec<&str>>();
+    words.sort();
+    let matches = || Symspell::lookup(&query);
+    println!("{:?}", matches);
 }
 
 fn main() {}
