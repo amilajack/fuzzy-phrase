@@ -1,31 +1,28 @@
-use std::ops::Range;
-
 #[derive(Clone)]
 pub enum Word {
     Full {
         string: String,
         id: u64,
-        edit_distance: u64,
     },
     Prefix {
         string: String,
-        id_range: Range<u64>,
-        // not sure this makes sense
-        // edit_distance: u64,
+        id_range: (u64, u64),
     },
 }
 
-pub struct Phrase {
+pub struct Phrase<'a> {
     length: usize,
-    words: Vec<Word>,
+    words: &'a[&'a Word],
+    edit_distances: &'a[i32],
 }
 
-impl Phrase {
-    pub fn new(words: &[Word]) -> Phrase {
+impl<'a> Phrase<'a> {
+    pub fn new(words: &'a[&'a Word], edit_distances: &'a [i32]) -> Phrase<'a> {
         let length: usize = words.len();
         Phrase {
-            words: words.to_vec(),
-            length: length,
+            words,
+            length,
+            edit_distances,
         }
     }
 
@@ -34,12 +31,33 @@ impl Phrase {
     }
 }
 
-impl IntoIterator for Phrase {
-    type Item = Word;
-    type IntoIter = ::std::vec::IntoIter<Word>;
+pub struct PhraseIterator<'a> {
+    phrase: &'a Phrase<'a>,
+    offset: usize,
+    total_distance: i32,
+}
+
+impl<'a> Iterator for PhraseIterator<'a> {
+    type Item = &'a Word;
+
+    fn next(&mut self) -> Option<&'a Word> {
+        if self.offset >= self.phrase.length {
+            return None
+        } else {
+            let word = self.phrase.words[self.offset];
+            self.total_distance += self.phrase.edit_distances[self.offset];
+            self.offset += 1;
+            Some(word)
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Phrase<'a> {
+    type Item = &'a Word;
+    type IntoIter = PhraseIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.words.into_iter()
+        PhraseIterator{ phrase: self, offset: 0, total_distance: 0}
     }
 }
 
@@ -49,17 +67,24 @@ mod tests {
 
     #[test]
     fn two_exact_matches_one_prefix() {
+
+        // two words
+        let word_one = Word::Full{ string: String::from("100"), id: 1u64 };
+        let word_two = Word::Full{ string: String::from("main"), id: 61_528u64 };
+        // last word is a prefix
+        let word_three = Word::Prefix{
+            string: String::from("st"),
+            id_range: (561_528u64, 561_531u64),
+        };
+
         let word_seq = [
-            // two words
-            Word::Full{ string: String::from("100") , id: 1u64,      edit_distance: 0 },
-            Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 },
-            // last word is a prefix
-            Word::Prefix{
-                string: String::from("st"),
-                id_range: Range { start: 561_528u64, end: 561_531u64 }
-            },
+            &word_one,
+            &word_two,
+            &word_three
         ];
-        let phrase = Phrase::new(&word_seq);
+
+        let edit_distances = [ 0, 0, 0 ];
+        let phrase = Phrase::new(&word_seq, &edit_distances);
 
         let mut word_count = 0;
         let mut word_ids = vec![];
@@ -67,15 +92,18 @@ mod tests {
         let mut prefix_count = 0;
         let mut prefix_ids = vec![];
 
-        for word in phrase.into_iter() {
+        let phrase_iter = phrase.into_iter();
+
+        for word in phrase_iter {
             match word {
-                Word::Full{ string, id, edit_distance } => {
+                &Word::Full{ ref string,  ref id } => {
                     word_count += 1;
-                    word_ids.push(id);
+                    word_ids.push(*id);
                 },
-                Word::Prefix{ string, id_range } => {
+                &Word::Prefix{ ref string, ref id_range } => {
                     prefix_count += 1;
-                    for i in id_range {
+                    //for i in id_range.start..id_range.end {
+                    for i in (*id_range).0..(*id_range).1 {
                         prefix_ids.push(i);
                     }
                 }
