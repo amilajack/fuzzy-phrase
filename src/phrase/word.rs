@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+#[derive(Clone)]
 pub enum Word {
     Full {
         string: String,
@@ -14,13 +15,41 @@ pub enum Word {
     },
 }
 
+pub struct Phrase {
+    length: usize,
+    words: Vec<Word>,
+}
+
+impl Phrase {
+    pub fn new(words: &[Word]) -> Phrase {
+        let length: usize = words.len();
+        Phrase {
+            words: words.to_vec(),
+            length: length,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+}
+
+impl IntoIterator for Phrase {
+    type Item = Word;
+    type IntoIter = ::std::vec::IntoIter<Word>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.words.into_iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn two_exact_matches_one_prefix() {
-        let phrase: Vec<Word> = vec![
+        let word_seq = [
             // two words
             Word::Full{ string: String::from("100") , id: 1u64,      edit_distance: 0 },
             Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 },
@@ -30,6 +59,7 @@ mod tests {
                 id_range: Range { start: 561_528u64, end: 561_531u64 }
             },
         ];
+        let phrase = Phrase::new(&word_seq);
 
         let mut word_count = 0;
         let mut word_ids = vec![];
