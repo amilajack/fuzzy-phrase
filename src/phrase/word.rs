@@ -6,6 +6,7 @@ pub enum Word {
     },
     Prefix {
         string: String,
+        // TODO: Change back to range type <30-04-18, boblannon> //
         id_range: (u64, u64),
     },
 }
@@ -31,6 +32,7 @@ impl<'a> Phrase<'a> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct PhraseIterator<'a> {
     phrase: &'a Phrase<'a>,
     offset: usize,
@@ -94,21 +96,21 @@ mod tests {
 
         let phrase_iter = phrase.into_iter();
 
-        for word in phrase_iter {
+        for ref word in phrase_iter {
             match word {
-                &Word::Full{ ref string,  ref id } => {
+                &&Word::Full{ ref string,  ref id } => {
                     word_count += 1;
                     word_ids.push(*id);
                 },
-                &Word::Prefix{ ref string, ref id_range } => {
+                &&Word::Prefix{ ref string, ref id_range } => {
                     prefix_count += 1;
-                    //for i in id_range.start..id_range.end {
                     for i in (*id_range).0..(*id_range).1 {
                         prefix_ids.push(i);
                     }
                 }
             }
         }
+        assert_eq!(0, phrase_iter.total_distance);
 
         // should be 2 full words, 2 ids
         assert_eq!(2, word_count);
@@ -117,5 +119,45 @@ mod tests {
         // should be 1 prefix, 3 ids
         assert_eq!(1, prefix_count);
         assert_eq!(vec![561_528, 561_529, 561_530], prefix_ids);
+    }
+
+    #[test]
+    fn two_fuzzy_matches() {
+
+        // two words
+        let word_one = Word::Full{ string: String::from("100"), id: 1u64 };
+        let word_two = Word::Full{ string: String::from("main"), id: 61_528u64 };
+
+        let word_seq = [
+            &word_one,
+            &word_two,
+        ];
+
+        let edit_distances = [ 1, 2 ];
+        let phrase = Phrase::new(&word_seq, &edit_distances);
+
+        let mut word_count = 0;
+        let mut word_ids = vec![];
+
+        let phrase_iter = phrase.into_iter();
+
+        for (i, ref word) in phrase_iter.enumerate() {
+            assert_eq!(edit_distances[i], phrase_iter.total_distance);
+            match word {
+                &&Word::Full{ ref string,  ref id } => {
+                    word_count += 1;
+                    word_ids.push(*id);
+                },
+                _ => {
+                    panic!("Should be all full words");
+                }
+            }
+        }
+        assert_eq!(3, phrase_iter.total_distance);
+
+        // should be 2 full words, 2 ids
+        assert_eq!(2, word_count);
+        assert_eq!(vec![1, 61_528], word_ids);
+
     }
 }
