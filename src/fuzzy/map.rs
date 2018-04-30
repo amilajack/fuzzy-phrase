@@ -82,7 +82,9 @@ impl<W: Write> FuzzyMapBuilder<W> {
 
     pub fn extend_iter<T, I>(&mut self, iter: I) -> Result<(), FstError>
             where T: AsRef<[u8]>, I: IntoIterator<Item=(T, u64)> {
-                self.builder.extend_iter(iter.into_iter().map(|(k, v)| (k, raw::Output::new(v))));
+                for (k, v) in iter {
+                    self.builder.insert(k, v)?;
+                }
                 Ok(())
     }
 
