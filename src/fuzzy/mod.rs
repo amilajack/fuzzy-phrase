@@ -1,10 +1,8 @@
-use std::io::{BufReader, BufWriter};
+use std::io::{BufWriter};
 use std::fs::File;
 use std::error::Error;
 use itertools::Itertools;
 use strsim::damerau_levenshtein;
-use serde::{Deserialize, Serialize};
-use rmps::{Deserializer, Serializer};
 
 mod map;
 pub use self::map::FuzzyMapBuilder;
@@ -16,13 +14,17 @@ static BIG_NUMBER: usize = 1 << 30;
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[derive(Clone)]
 
-struct Symspell {
+pub struct Symspell {
     id_list: Vec<Vec<usize>>
 }
 
 impl Symspell {
-    //builds the structure
-    fn build<'a, T>(words: T) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
+    pub fn new(id_list: Vec<Vec<usize>>) -> Symspell {
+        Symspell { id_list: id_list }
+    }
+
+    //builds the graph and writes to disk, additionally writes the ids to id_list which is a part of struct
+    fn build<'a, T>(words: T) -> Result<Vec<Vec<usize>>, Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
         let word_variants = Symspell::create_variants(words);
         let wtr = BufWriter::new(File::create("x_sym.fst")?);
         let mut build = FuzzyMapBuilder::new(wtr)?;
@@ -37,11 +39,9 @@ impl Symspell {
             };
             build.insert(key, id as u64)?;
         }
-        let multi_idx = Symspell { id_list: multids.to_vec() };
-        let mf_wtr = BufWriter::new(File::create("id.msg")?);
-        multi_idx.serialize(&mut Serializer::new(mf_wtr))?;
+        let multi_idx = Symspell::new(multids.to_vec());
         build.finish()?;
-        Ok(())
+        Ok(multi_idx.id_list)
     }
     //creates delete variants for every word in the list
     //using usize for - https://stackoverflow.com/questions/29592256/whats-the-difference-between-usize-and-u32?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
@@ -64,7 +64,7 @@ impl Symspell {
     }
 
     //Defining lifetimes here because we are expecting the string to last the lifetime of the closure F
-    fn lookup<'a, F>(query: &str, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
+    fn lookup<'a, F>(query: &str, ids: &Vec<Vec<usize>>, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
 
         let mut query_variants = Vec::new();
         let mut matches = Vec::<usize>::new();
@@ -82,11 +82,6 @@ impl Symspell {
             query_variants.push(variant);
         }
 
-        let mf : Symspell;
-        let mf_file = File::open("id.msg")?;
-        let mf_reader = BufReader::new(mf_file);
-        mf = Deserialize::deserialize(&mut Deserializer::new(mf_reader))?;
-
         for i in query_variants {
             match map.get(&i) {
                 Some (idx) => {
@@ -94,7 +89,7 @@ impl Symspell {
                     if uidx < BIG_NUMBER {
                         matches.push(uidx);
                     } else {
-                        for x in &(mf.id_list)[uidx - BIG_NUMBER] {
+                       for x in &(ids)[uidx - BIG_NUMBER] {
                             matches.push(*x);
                         }
                     }
@@ -125,7 +120,7 @@ fn exact_match() {
     .text().expect("tried to decode the data");
     let mut words = data.trim().split("\n").collect::<Vec<&str>>();
     words.sort();
-    let _built = Symspell::build(&words);
-    let matches = Symspell::lookup(&query, |id| &words[id]);
+    let ids = Symspell::build(&words);
+    let matches = Symspell::lookup(&query, &ids.unwrap(), |id| &words[id]);
     assert_eq!(matches.unwrap(), ["albazan"]);
 }
