@@ -12,6 +12,7 @@ pub enum Word {
     },
 }
 
+// TODO: explaining what everything's purpose is, and why we need lifetimes <01-05-18, boblannon> //
 pub struct Phrase<'a> {
     length: usize,
     words: &'a[&'a Word],
