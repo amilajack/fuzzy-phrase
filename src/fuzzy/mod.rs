@@ -11,7 +11,7 @@ pub use self::map::FuzzyMap;
 static BIG_NUMBER: usize = 1 << 30;
 
 #[cfg(test)] extern crate reqwest;
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, PartialEq)]
 #[derive(Clone)]
 
 pub struct Symspell {
