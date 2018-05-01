@@ -19,9 +19,12 @@ pub struct PhraseSet(Set);
 /// encoded as a series of 3 bytes.  For example, the three-word phrase "1## Main Street" will be
 /// represented over 9 transitions, with one byte each.
 ///
-/// tokens:      1##          main          street
-/// integers:    21           457           109821
-/// three bytes: [0, 0, 21]   [0, 1, 201]   [1, 172, 253]
+/// | tokens  | integers  | three_bytes   |
+/// |---------|-----------|---------------|
+/// | 100     | 21        | [0,   0,  21] |
+/// | main    | 457       | [0,   1, 201] |
+/// | street  | 109821    | [1, 172, 253] |
+///
 impl PhraseSet {
 
     /// Test membership of a single phrase
