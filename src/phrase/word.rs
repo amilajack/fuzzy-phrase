@@ -38,6 +38,7 @@ impl<'a> Phrase<'a> {
     pub fn len(&self) -> usize {
         self.length
     }
+
 }
 
 #[derive(Copy, Clone)]
@@ -75,18 +76,13 @@ mod tests {
 
     #[test]
     fn phrase_from_words() {
-        let word_one  = [
-            Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 },
+        let words = vec![
+            vec![ Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ Word::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
         ];
 
-        let word_two = vec![
-            Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 },
-        ];
-        let word_three = vec![
-            Word::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 },
-        ];
-
-        let word_seq = [ &word_one[0], &word_two[0], &word_three[0] ];
+        let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
 
         let phrase = Phrase::new(&word_seq[..]);
         assert_eq!(3, phrase.len());
@@ -102,18 +98,16 @@ mod tests {
     #[test]
     fn phrase_multiple_combinations() {
         // three words, two variants for third word
-        let word_one = vec![
-            Word::Full{ string: String::from("Evergreen"), id: 1u64, edit_distance: 0 },
-        ];
-        let word_two = vec![
-            Word::Full{ string: String::from("Terrace"), id: 61_528u64, edit_distance: 0 },
-        ];
-        let word_three = vec![
-            Word::Full{ string: String::from("Springfield"), id: 561_235u64, edit_distance: 0 },
-            Word::Full{ string: String::from("Sprungfeld"), id: 561_247u64, edit_distance: 2 },
+        let words = vec![
+            vec![ Word::Full{ string: String::from("Evergreen"), id: 1u64, edit_distance: 0 } ],
+            vec![ Word::Full{ string: String::from("Terrace"), id: 61_528u64, edit_distance: 0 } ],
+            vec![
+                Word::Full{ string: String::from("Springfield"), id: 561_235u64, edit_distance: 0 },
+                Word::Full{ string: String::from("Sprungfeld"), id: 561_247u64, edit_distance: 2 },
+            ],
         ];
 
-        let word_seq_a = [ &word_one[0], &word_two[0], &word_three[0] ];
+        let word_seq_a = [ &words[0][0], &words[1][0], &words[2][0] ];
         let phrase_a = Phrase::new(&word_seq_a);
 
         let mut word_ids = vec![];
@@ -135,7 +129,7 @@ mod tests {
         // should be 2 full words, 2 ids
         assert_eq!(vec![1u64, 61_528u64, 561_235u64], word_ids);
 
-        let word_seq_b = [ &word_one[0], &word_two[0], &word_three[1] ];
+        let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
         let phrase_b = Phrase::new(&word_seq_b);
 
         let mut word_ids = vec![];
@@ -158,94 +152,87 @@ mod tests {
         assert_eq!(vec![1u64, 61_528u64, 561_247u64], word_ids);
     }
 
-    // #[test]
-    // fn two_exact_matches_one_prefix() {
+    #[test]
+    fn two_fuzzy_matches() {
 
-    //     // two words
-    //     let word_one = vec![
-    //         Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 },
-    //     ];
+        let words = vec![
+            vec![ Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 1 } ],
+            vec![ Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 2 } ],
+        ];
+        let word_seq = [ &words[0][0], &words[1][0] ];
+        let phrase = Phrase::new(&word_seq[..]);
 
-    //     let word_two = vec![
-    //         Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 },
-    //     ];
+        let mut word_count = 0;
+        let mut word_ids = vec![];
+        let mut total_distance = 0;
 
-    //     let word_three = vec![
-    //         Word::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) },
-    //     ];
+        let phrase_iter = phrase.into_iter();
 
-    //     let phrase = Phrase::new(&word_seq);
+        for word in phrase_iter {
+            match word {
+                &Word::Full{ ref string,  ref id, ref edit_distance } => {
+                    word_count += 1;
+                    total_distance += edit_distance;
+                    word_ids.push(*id);
+                },
+                _ => {
+                    panic!("Should be all full words");
+                }
+            }
+        }
+        assert_eq!(3, total_distance);
 
-    //     let mut total_distance = 0;
-    //     let mut word_count = 0;
-    //     let mut word_ids = vec![];
+        // should be 2 full words, 2 ids
+        assert_eq!(2, word_count);
+        assert_eq!(vec![1, 61_528], word_ids);
 
-    //     let mut prefix_count = 0;
-    //     let mut prefix_ids = vec![];
+    }
 
-    //     let phrase_iter = phrase.into_iter();
 
-    //     for word in phrase_iter {
-    //         match word {
-    //             &Word::Full{ ref string,  ref id, ref edit_distance } => {
-    //                 word_count += 1;
-    //                 total_distance += edit_distance;
-    //                 word_ids.push(*id);
-    //             },
-    //             &Word::Prefix{ ref string, ref id_range } => {
-    //                 prefix_count += 1;
-    //                 for i in (*id_range).0..(*id_range).1 {
-    //                     prefix_ids.push(i);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     assert_eq!(0, total_distance);
+    #[test]
+    fn two_exact_matches_one_prefix() {
 
-    //     // should be 2 full words, 2 ids
-    //     assert_eq!(2, word_count);
-    //     assert_eq!(vec![1, 61_528], word_ids);
+        let words = vec![
+            vec![ Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ Word::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
+        ];
+        let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
+        let phrase = Phrase::new(&word_seq[..]);
 
-    //     // should be 1 prefix, 3 ids
-    //     assert_eq!(1, prefix_count);
-    //     assert_eq!(vec![561_528, 561_529, 561_530], prefix_ids);
-    // }
+        let mut total_distance = 0;
+        let mut word_count = 0;
+        let mut word_ids = vec![];
 
-    // #[test]
-    // fn two_fuzzy_matches() {
+        let mut prefix_count = 0;
+        let mut prefix_ids = vec![];
 
-    //     // two words
-    //     let word_seq = [
-    //         Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 1 },
-    //         Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 2 },
-    //     ];
+        let phrase_iter = phrase.into_iter();
 
-    //     let phrase = Phrase::new(&word_seq);
+        for word in phrase_iter {
+            match word {
+                &Word::Full{ ref string,  ref id, ref edit_distance } => {
+                    word_count += 1;
+                    total_distance += edit_distance;
+                    word_ids.push(*id);
+                },
+                &Word::Prefix{ ref string, ref id_range } => {
+                    prefix_count += 1;
+                    for i in (*id_range).0..(*id_range).1 {
+                        prefix_ids.push(i);
+                    }
+                }
+            }
+        }
+        assert_eq!(0, total_distance);
 
-    //     let mut word_count = 0;
-    //     let mut word_ids = vec![];
-    //     let mut total_distance = 0;
+        // should be 2 full words, 2 ids
+        assert_eq!(2, word_count);
+        assert_eq!(vec![1, 61_528], word_ids);
 
-    //     let phrase_iter = phrase.into_iter();
-
-    //     for word in phrase_iter {
-    //         match word {
-    //             &Word::Full{ ref string,  ref id, ref edit_distance } => {
-    //                 word_count += 1;
-    //                 total_distance += edit_distance;
-    //                 word_ids.push(*id);
-    //             },
-    //             _ => {
-    //                 panic!("Should be all full words");
-    //             }
-    //         }
-    //     }
-    //     assert_eq!(3, total_distance);
-
-    //     // should be 2 full words, 2 ids
-    //     assert_eq!(2, word_count);
-    //     assert_eq!(vec![1, 61_528], word_ids);
-
-    // }
+        // should be 1 prefix, 3 ids
+        assert_eq!(1, prefix_count);
+        assert_eq!(vec![561_528, 561_529, 561_530], prefix_ids);
+    }
 
 }
