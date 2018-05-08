@@ -50,7 +50,7 @@ impl<'a> Phrase<'a> {
         let mut total_edit_distance = 0;
         for word in self.words {
             match word {
-                &&Word::Full{ ref string,  ref id, ref edit_distance } => {
+                &&Word::Full{ ref edit_distance, .. } => {
                     total_edit_distance += *edit_distance;
                 },
                 _ => (),
@@ -136,7 +136,7 @@ mod tests {
 
         for word in phrase_a.into_iter() {
             match word {
-                &Word::Full{ ref string,  ref id, ref edit_distance } => {
+                &Word::Full{ ref id, .. } => {
                     word_ids.push(*id);
                 },
                 _ => {
@@ -156,7 +156,7 @@ mod tests {
 
         for word in phrase_b.into_iter() {
             match word {
-                &Word::Full{ ref string,  ref id, ref edit_distance } => {
+                &Word::Full{ ref id, .. } => {
                     word_ids.push(*id);
                 },
                 _ => {
@@ -188,7 +188,7 @@ mod tests {
 
         for word in phrase_iter {
             match word {
-                &Word::Full{ ref string,  ref id, ref edit_distance } => {
+                &Word::Full{ ref id, .. } => {
                     word_count += 1;
                     word_ids.push(*id);
                 },
@@ -228,11 +228,11 @@ mod tests {
 
         for word in phrase_iter {
             match word {
-                &Word::Full{ ref string,  ref id, ref edit_distance } => {
+                &Word::Full{ ref id, .. } => {
                     word_count += 1;
                     word_ids.push(*id);
                 },
-                &Word::Prefix{ ref string, ref id_range } => {
+                &Word::Prefix{ ref id_range, .. } => {
                     prefix_count += 1;
                     for i in (*id_range).0..(*id_range).1 {
                         prefix_ids.push(i);
