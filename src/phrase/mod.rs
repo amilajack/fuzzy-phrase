@@ -169,5 +169,22 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn contains_query() {
+        let mut build = PhraseSetBuilder::memory();
+        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
+        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
+        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        let bytes = build.into_inner().unwrap();
+
+        let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
+
+        let phrase_one = [1u64, 61_528u64, 561_528u64];
+        assert_eq!(true, phrase_set.contains(&phrase_one));
+
+        let phrase_none = [1u64, 1u64, 1u64];
+        assert_eq!(false, phrase_set.contains(&phrase_none));
+    }
 }
 
