@@ -1,17 +1,21 @@
+/// An abstraction over full words and prefixes.
 #[derive(Clone)]
 pub enum Word {
+    /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
         string: String,
         id: u64,
         edit_distance: i8,
     },
+
+    /// A `Prefix` is a string that is the prefix to more than one full word, and includes an id_range field,
+    /// which of identifiers.
     Prefix {
         string: String,
         id_range: (u64, u64),
     },
 }
 
-// TODO: explaining what everything's purpose is, and why we need lifetimes <01-05-18, boblannon> //
 /// A specialized container for a sequence of `Word`s.
 ///
 /// It allows iterating over a sequence of `Word`s without taking ownership of them.  the `words`
