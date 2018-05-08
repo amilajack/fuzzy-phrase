@@ -20,7 +20,8 @@ pub enum Word {
 /// `multiple_combinations` test below for an example. It's important that we work on references to
 /// the elements of those arrays so that they can be re-used.
 ///
-/// The lifetime annotations are necessary
+/// Because the `words` fields is made up of pointers, the lifetime annotations are necessary to
+/// make sure that the sequence of words used to make the phrase does not go out of scope.
 pub struct Phrase<'a> {
     length: usize,
     words: &'a[&'a Word],
@@ -35,10 +36,12 @@ impl<'a> Phrase<'a> {
         }
     }
 
+    /// Return the length of the phrase (number of words)
     pub fn len(&self) -> usize {
         self.length
     }
 
+    /// Sum the edit distances of the full words in the phrase
     pub fn total_edit_distance(&self) -> i8 {
         let mut total_edit_distance = 0;
         for word in self.words {
