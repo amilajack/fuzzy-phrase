@@ -1,6 +1,6 @@
 /// An abstraction over full words and prefixes.
 #[derive(Clone)]
-pub enum Word {
+pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
         string: String,
@@ -16,25 +16,25 @@ pub enum Word {
     },
 }
 
-/// A specialized container for a sequence of `Word`s.
+/// A specialized container for a sequence of `QueryWord`s.
 ///
-/// It allows iterating over a sequence of `Word`s without taking ownership of them.  the `words`
-/// field contains a _slice_ of _references_ to `Word`s. This is helpful design because we'll often
-/// be combining and re-combining the elements of multiple `Vec<Word>`s. See the
+/// It allows iterating over a sequence of `QueryWord`s without taking ownership of them.  the `words`
+/// field contains a _slice_ of _references_ to `QueryWord`s. This is helpful design because we'll often
+/// be combining and re-combining the elements of multiple `Vec<QueryWord>`s. See the
 /// `multiple_combinations` test below for an example. It's important that we work on references to
 /// the elements of those arrays so that they can be re-used.
 ///
 /// Because the `words` fields is made up of pointers, the lifetime annotations are necessary to
 /// make sure that the sequence of words used to make the phrase does not go out of scope.
-pub struct Phrase<'a> {
+pub struct QueryPhrase<'a> {
     length: usize,
-    words: &'a[&'a Word],
+    words: &'a[&'a QueryWord],
 }
 
-impl<'a> Phrase<'a> {
-    pub fn new(words: &'a[&'a Word]) -> Phrase<'a> {
+impl<'a> QueryPhrase<'a> {
+    pub fn new(words: &'a[&'a QueryWord]) -> QueryPhrase<'a> {
         let length: usize = words.len();
-        Phrase {
+        QueryPhrase {
             words,
             length,
         }
@@ -50,7 +50,7 @@ impl<'a> Phrase<'a> {
         let mut total_edit_distance = 0;
         for word in self.words {
             match word {
-                &&Word::Full{ ref edit_distance, .. } => {
+                &&QueryWord::Full{ ref edit_distance, .. } => {
                     total_edit_distance += *edit_distance;
                 },
                 _ => (),
@@ -62,15 +62,15 @@ impl<'a> Phrase<'a> {
 }
 
 #[derive(Copy, Clone)]
-pub struct PhraseIterator<'a> {
-    phrase: &'a Phrase<'a>,
+pub struct QueryPhraseIterator<'a> {
+    phrase: &'a QueryPhrase<'a>,
     offset: usize,
 }
 
-impl<'a> Iterator for PhraseIterator<'a> {
-    type Item = &'a Word;
+impl<'a> Iterator for QueryPhraseIterator<'a> {
+    type Item = &'a QueryWord;
 
-    fn next(&mut self) -> Option<&'a Word> {
+    fn next(&mut self) -> Option<&'a QueryWord> {
         if self.offset >= self.phrase.length {
             return None
         } else {
@@ -81,12 +81,12 @@ impl<'a> Iterator for PhraseIterator<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a Phrase<'a> {
-    type Item = &'a Word;
-    type IntoIter = PhraseIterator<'a>;
+impl<'a> IntoIterator for &'a QueryPhrase<'a> {
+    type Item = &'a QueryWord;
+    type IntoIter = QueryPhraseIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        PhraseIterator{ phrase: self, offset: 0 }
+        QueryPhraseIterator{ phrase: self, offset: 0 }
     }
 }
 
@@ -97,20 +97,20 @@ mod tests {
     #[test]
     fn phrase_from_words() {
         let words = vec![
-            vec![ Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ Word::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
         ];
 
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
 
-        let phrase = Phrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]);
         assert_eq!(3, phrase.len());
 
-        let shingle_one = Phrase::new(&word_seq[0..2]);
+        let shingle_one = QueryPhrase::new(&word_seq[0..2]);
         assert_eq!(2, shingle_one.len());
 
-        let shingle_two = Phrase::new(&word_seq[1..3]);
+        let shingle_two = QueryPhrase::new(&word_seq[1..3]);
         assert_eq!(2, shingle_two.len());
 
     }
@@ -119,16 +119,16 @@ mod tests {
     fn phrase_multiple_combinations() {
         // three words, two variants for third word
         let words = vec![
-            vec![ Word::Full{ string: String::from("Evergreen"), id: 1u64, edit_distance: 0 } ],
-            vec![ Word::Full{ string: String::from("Terrace"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("Evergreen"), id: 1u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("Terrace"), id: 61_528u64, edit_distance: 0 } ],
             vec![
-                Word::Full{ string: String::from("Springfield"), id: 561_235u64, edit_distance: 0 },
-                Word::Full{ string: String::from("Sprungfeld"), id: 561_247u64, edit_distance: 2 },
+                QueryWord::Full{ string: String::from("Springfield"), id: 561_235u64, edit_distance: 0 },
+                QueryWord::Full{ string: String::from("Sprungfeld"), id: 561_247u64, edit_distance: 2 },
             ],
         ];
 
         let word_seq_a = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let phrase_a = Phrase::new(&word_seq_a);
+        let phrase_a = QueryPhrase::new(&word_seq_a);
 
         assert_eq!(0, phrase_a.total_edit_distance());
 
@@ -136,7 +136,7 @@ mod tests {
 
         for word in phrase_a.into_iter() {
             match word {
-                &Word::Full{ ref id, .. } => {
+                &QueryWord::Full{ ref id, .. } => {
                     word_ids.push(*id);
                 },
                 _ => {
@@ -149,14 +149,14 @@ mod tests {
         assert_eq!(vec![1u64, 61_528u64, 561_235u64], word_ids);
 
         let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
-        let phrase_b = Phrase::new(&word_seq_b);
+        let phrase_b = QueryPhrase::new(&word_seq_b);
         assert_eq!(2, phrase_b.total_edit_distance());
 
         let mut word_ids = vec![];
 
         for word in phrase_b.into_iter() {
             match word {
-                &Word::Full{ ref id, .. } => {
+                &QueryWord::Full{ ref id, .. } => {
                     word_ids.push(*id);
                 },
                 _ => {
@@ -173,11 +173,11 @@ mod tests {
     fn two_fuzzy_matches() {
 
         let words = vec![
-            vec![ Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 1 } ],
-            vec![ Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 2 } ],
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 1 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 2 } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0] ];
-        let phrase = Phrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]);
 
         assert_eq!(3, phrase.total_edit_distance());
 
@@ -188,7 +188,7 @@ mod tests {
 
         for word in phrase_iter {
             match word {
-                &Word::Full{ ref id, .. } => {
+                &QueryWord::Full{ ref id, .. } => {
                     word_count += 1;
                     word_ids.push(*id);
                 },
@@ -209,12 +209,12 @@ mod tests {
     fn two_exact_matches_one_prefix() {
 
         let words = vec![
-            vec![ Word::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ Word::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ Word::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let phrase = Phrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]);
 
         assert_eq!(0, phrase.total_edit_distance());
 
@@ -228,11 +228,11 @@ mod tests {
 
         for word in phrase_iter {
             match word {
-                &Word::Full{ ref id, .. } => {
+                &QueryWord::Full{ ref id, .. } => {
                     word_count += 1;
                     word_ids.push(*id);
                 },
-                &Word::Prefix{ ref id_range, .. } => {
+                &QueryWord::Prefix{ ref id_range, .. } => {
                     prefix_count += 1;
                     for i in (*id_range).0..(*id_range).1 {
                         prefix_ids.push(i);
