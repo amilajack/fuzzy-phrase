@@ -39,6 +39,19 @@ impl<'a> Phrase<'a> {
         self.length
     }
 
+    pub fn total_edit_distance(&self) -> i8 {
+        let mut total_edit_distance = 0;
+        for word in self.words {
+            match word {
+                &&Word::Full{ ref string,  ref id, ref edit_distance } => {
+                    total_edit_distance += *edit_distance;
+                },
+                _ => (),
+            }
+        }
+        total_edit_distance
+    }
+
 }
 
 #[derive(Copy, Clone)]
@@ -110,43 +123,40 @@ mod tests {
         let word_seq_a = [ &words[0][0], &words[1][0], &words[2][0] ];
         let phrase_a = Phrase::new(&word_seq_a);
 
+        assert_eq!(0, phrase_a.total_edit_distance());
+
         let mut word_ids = vec![];
-        let mut total_distance = 0;
 
         for word in phrase_a.into_iter() {
             match word {
                 &Word::Full{ ref string,  ref id, ref edit_distance } => {
                     word_ids.push(*id);
-                    total_distance += edit_distance;
                 },
                 _ => {
                     panic!("Should be all full words");
                 }
             }
         }
-        assert_eq!(0, total_distance);
 
         // should be 2 full words, 2 ids
         assert_eq!(vec![1u64, 61_528u64, 561_235u64], word_ids);
 
         let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
         let phrase_b = Phrase::new(&word_seq_b);
+        assert_eq!(2, phrase_b.total_edit_distance());
 
         let mut word_ids = vec![];
-        let mut total_distance = 0;
 
         for word in phrase_b.into_iter() {
             match word {
                 &Word::Full{ ref string,  ref id, ref edit_distance } => {
                     word_ids.push(*id);
-                    total_distance += edit_distance;
                 },
                 _ => {
                     panic!("Should be all full words");
                 }
             }
         }
-        assert_eq!(2, total_distance);
 
         // should be 2 full words, 2 ids
         assert_eq!(vec![1u64, 61_528u64, 561_247u64], word_ids);
@@ -162,9 +172,10 @@ mod tests {
         let word_seq = [ &words[0][0], &words[1][0] ];
         let phrase = Phrase::new(&word_seq[..]);
 
+        assert_eq!(3, phrase.total_edit_distance());
+
         let mut word_count = 0;
         let mut word_ids = vec![];
-        let mut total_distance = 0;
 
         let phrase_iter = phrase.into_iter();
 
@@ -172,7 +183,6 @@ mod tests {
             match word {
                 &Word::Full{ ref string,  ref id, ref edit_distance } => {
                     word_count += 1;
-                    total_distance += edit_distance;
                     word_ids.push(*id);
                 },
                 _ => {
@@ -180,7 +190,6 @@ mod tests {
                 }
             }
         }
-        assert_eq!(3, total_distance);
 
         // should be 2 full words, 2 ids
         assert_eq!(2, word_count);
@@ -200,7 +209,8 @@ mod tests {
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
         let phrase = Phrase::new(&word_seq[..]);
 
-        let mut total_distance = 0;
+        assert_eq!(0, phrase.total_edit_distance());
+
         let mut word_count = 0;
         let mut word_ids = vec![];
 
@@ -213,7 +223,6 @@ mod tests {
             match word {
                 &Word::Full{ ref string,  ref id, ref edit_distance } => {
                     word_count += 1;
-                    total_distance += edit_distance;
                     word_ids.push(*id);
                 },
                 &Word::Prefix{ ref string, ref id_range } => {
@@ -224,7 +233,6 @@ mod tests {
                 }
             }
         }
-        assert_eq!(0, total_distance);
 
         // should be 2 full words, 2 ids
         assert_eq!(2, word_count);
