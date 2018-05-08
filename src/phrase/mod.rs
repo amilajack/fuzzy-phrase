@@ -1,5 +1,5 @@
 pub mod util;
-pub mod word;
+pub mod query;
 
 use std::io;
 #[cfg(feature = "mmap")]
@@ -9,6 +9,7 @@ use fst;
 use fst::{IntoStreamer, Set, SetBuilder};
 
 use self::util::phrase_to_key;
+use self::query::{QueryWord, QueryPhrase};
 
 pub struct PhraseSet(Set);
 
