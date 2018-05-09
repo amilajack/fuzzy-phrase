@@ -29,9 +29,16 @@ pub struct PhraseSet(Set);
 impl PhraseSet {
 
     /// Test membership of a single phrase
-    pub fn contains(&self, phrase: &[u64]) -> bool {
-        let key = phrase_to_key(&phrase);
-        self.0.contains(key)
+    pub fn contains(&self, phrase: QueryPhrase) -> bool {
+        if phrase.has_prefix {
+            // TODO if last word is prefix, do some special shit
+            false
+        } else {
+            // if all words are Full
+            // construct key and perform typical contains query
+            let key = phrase.full_word_key();
+            self.0.contains(key)
+        }
     }
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
@@ -43,7 +50,6 @@ impl PhraseSet {
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, fst::Error> {
         Set::from_path(path).map(PhraseSet)
     }
-
 
 }
 
@@ -180,11 +186,19 @@ mod tests {
 
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
-        let phrase_one = [1u64, 61_528u64, 561_528u64];
-        assert_eq!(true, phrase_set.contains(&phrase_one));
+        let words = vec![
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+        ];
 
-        let phrase_none = [1u64, 1u64, 1u64];
-        assert_eq!(false, phrase_set.contains(&phrase_none));
+        let matching_word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
+        let matching_phrase = QueryPhrase::new(&matching_word_seq);
+        assert_eq!(true, phrase_set.contains(matching_phrase));
+
+        let missing_word_seq = [ &words[0][0], &words[1][0] ];
+        let missing_phrase = QueryPhrase::new(&missing_word_seq);
+        assert_eq!(false, phrase_set.contains(missing_phrase));
     }
 }
 
