@@ -165,5 +165,9 @@ mod tests {
         let query4 = "🤔";
         let matches = Symspell::lookup(&query4, 1, unwrapped_ids, |id| &words[id]);
         assert_eq!(matches.unwrap(), no_return);
+
+        let query5 = "";
+        let matches = Symspell::lookup(&query5, 1, unwrapped_ids, |id| &words[id]);
+        assert_eq!(matches.unwrap(), no_return);
     }
 }
