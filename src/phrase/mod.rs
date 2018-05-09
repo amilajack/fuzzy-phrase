@@ -8,7 +8,7 @@ use std::path::Path;
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder};
 
-use self::util::phrase_to_key;
+use self::util::word_ids_to_key;
 use self::query::{QueryWord, QueryPhrase};
 
 pub struct PhraseSet(Set);
@@ -73,7 +73,7 @@ impl<W: io::Write> PhraseSetBuilder<W> {
 
     /// Insert a phrase, specified as an array of word identifiers.
     pub fn insert(&mut self, phrase: &[u64]) -> Result<(), fst::Error> {
-        let key = phrase_to_key(phrase);
+        let key = word_ids_to_key(phrase);
         self.0.insert(key)
     }
 

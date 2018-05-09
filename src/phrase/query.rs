@@ -1,3 +1,5 @@
+use super::util;
+
 /// An abstraction over full words and prefixes.
 #[derive(Clone)]
 pub enum QueryWord {
@@ -27,16 +29,22 @@ pub enum QueryWord {
 /// Because the `words` fields is made up of pointers, the lifetime annotations are necessary to
 /// make sure that the sequence of words used to make the phrase does not go out of scope.
 pub struct QueryPhrase<'a> {
-    length: usize,
-    words: &'a[&'a QueryWord],
+    pub length: usize,
+    pub words: &'a[&'a QueryWord],
+    pub has_prefix: bool,
 }
 
 impl<'a> QueryPhrase<'a> {
     pub fn new(words: &'a[&'a QueryWord]) -> QueryPhrase<'a> {
         let length: usize = words.len();
+        let has_prefix: bool = match words[length - 1] {
+            &QueryWord::Full {..} => false,
+            &QueryWord::Prefix {..} => true,
+        };
         QueryPhrase {
             words,
             length,
+            has_prefix,
         }
     }
 
@@ -57,6 +65,20 @@ impl<'a> QueryPhrase<'a> {
             }
         }
         total_edit_distance
+    }
+
+    /// Generate a key from the ids of the full words in this phrase
+    pub fn full_word_key(&self) -> Vec<u8> {
+        let mut word_ids: Vec<u64> = vec![];
+        for word in self.words {
+            match word {
+                &&QueryWord::Full{ ref id, .. } => {
+                    word_ids.push(*id);
+                },
+                _ => (),
+            }
+        }
+        util::word_ids_to_key(&word_ids)
     }
 
 }
@@ -106,6 +128,15 @@ mod tests {
 
         let phrase = QueryPhrase::new(&word_seq[..]);
         assert_eq!(3, phrase.len());
+        assert_eq!(false, phrase.has_prefix);
+        assert_eq!(
+            vec![
+                0u8, 0u8,   1u8,     // 1
+                0u8, 240u8, 88u8,    // 61_528
+                8u8, 145u8, 120u8,   // 561_528
+            ],
+            phrase.full_word_key()
+        );
 
         let shingle_one = QueryPhrase::new(&word_seq[0..2]);
         assert_eq!(2, shingle_one.len());
@@ -131,6 +162,15 @@ mod tests {
         let phrase_a = QueryPhrase::new(&word_seq_a);
 
         assert_eq!(0, phrase_a.total_edit_distance());
+        assert_eq!(false, phrase_a.has_prefix);
+        assert_eq!(
+            vec![
+                0u8, 0u8,   1u8,    // 1
+                0u8, 240u8, 88u8,   // 61_528
+                8u8, 144u8, 83u8,   // 561_235
+            ],
+            phrase_a.full_word_key()
+        );
 
         let mut word_ids = vec![];
 
@@ -151,6 +191,15 @@ mod tests {
         let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
         let phrase_b = QueryPhrase::new(&word_seq_b);
         assert_eq!(2, phrase_b.total_edit_distance());
+        assert_eq!(false, phrase_b.has_prefix);
+        assert_eq!(
+            vec![
+                0u8, 0u8,   1u8,    // 1
+                0u8, 240u8, 88u8,   // 61_528
+                8u8, 144u8, 95u8,   // 561_247
+            ],
+            phrase_b.full_word_key()
+        );
 
         let mut word_ids = vec![];
 
@@ -180,6 +229,14 @@ mod tests {
         let phrase = QueryPhrase::new(&word_seq[..]);
 
         assert_eq!(3, phrase.total_edit_distance());
+        assert_eq!(false, phrase.has_prefix);
+        assert_eq!(
+            vec![
+                0u8, 0u8,   1u8,     // 1
+                0u8, 240u8, 88u8,    // 61_528
+            ],
+            phrase.full_word_key()
+        );
 
         let mut word_count = 0;
         let mut word_ids = vec![];
@@ -217,6 +274,14 @@ mod tests {
         let phrase = QueryPhrase::new(&word_seq[..]);
 
         assert_eq!(0, phrase.total_edit_distance());
+        assert_eq!(true, phrase.has_prefix);
+        assert_eq!(
+            vec![
+                0u8, 0u8,   1u8,     // 1
+                0u8, 240u8, 88u8,    // 61_528
+            ],
+            phrase.full_word_key()
+        );
 
         let mut word_count = 0;
         let mut word_ids = vec![];
