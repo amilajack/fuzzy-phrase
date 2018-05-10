@@ -1,5 +1,7 @@
 use std::io::Cursor;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
+use std::fmt;
+use std::error;
 
 pub fn chop_int(num: u64) -> Vec<u8> {
     let mut wtr = vec![];
@@ -36,6 +38,28 @@ pub fn key_to_word_ids(key: &[u8]) -> Vec<u64> {
         i += 3;
     }
     phrase
+}
+
+#[derive(Debug, Clone)]
+pub enum PhraseSetError {
+    ContainsIgnoresPrefix,
+}
+
+impl fmt::Display for PhraseSetError {
+
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            PhraseSetError::ContainsIgnoresPrefix => f.write_str("ContainsIgnoresPrefix"),
+        }
+    }
+}
+impl error::Error for PhraseSetError {
+    fn description(&self) -> &str {
+        match *self {
+            Error::ContainsIgnoresPrefix => f.write_str(
+                "contains and contains_prefix methods ignore QueryWord::Prefix types"),
+        }
+    }
 }
 
 #[cfg(test)]

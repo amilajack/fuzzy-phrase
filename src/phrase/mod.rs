@@ -10,6 +10,7 @@ use fst::{IntoStreamer, Set, SetBuilder};
 use fst::raw::{Node, Transition, CompiledAddr};
 
 use self::util::word_ids_to_key;
+use self::util::PhraseSetError;
 use self::query::{QueryWord, QueryPhrase};
 
 pub struct PhraseSet(Set);
@@ -30,14 +31,24 @@ pub struct PhraseSet(Set);
 impl PhraseSet {
 
     /// Test membership of a single phrase
-    pub fn contains(&self, phrase: QueryPhrase) -> bool {
-        if phrase.has_prefix {
-            self.contains_prefix(phrase)
-        } else {
-            // if all words are Full
-            // construct key and perform typical contains query
-            let key = phrase.full_word_key();
-            self.0.contains(key)
+    pub fn contains(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError> {
+        if phrase.has_prefix() {
+            Err(PhraseSetError::ContainsIgnoresPrefix)
+        }
+        let key = phrase.full_word_key();
+        Ok(self.0.contains(key))
+    }
+
+    pub fn contains_prefix(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError>  {
+        if phrase.has_prefix() {
+            Err(PhraseSetError::ContainsIgnoresPrefix)
+        }
+        let key = phrase.full_word_key();
+        let fst = self.0.as_fst();
+        let root_addr = fst.root_node().addr();
+        match self.partial_search(root_addr, key) {
+            None => return false,
+            Some(i) => return true,
         }
     }
 
@@ -54,166 +65,7 @@ impl PhraseSet {
         return Some(node.addr())
     }
 
-    fn contains_prefix(&self, phrase: QueryPhrase) -> bool {
-        let (prefix_min_key, prefix_max_key) = phrase.prefix_key_range().unwrap();
 
-		// self as fst
-        let fst = &self.0.as_fst();
-        // start from root node
-        let root_node = fst.root();
-
-		// using the keys for the full words, walk the graph. if no path accepts these keys, stop
-        // here. result node should not be final.
-        let full_word_key = phrase.full_word_key();
-        let full_word_addr = match self.partial_search(root_node.addr(), full_word_key) {
-            None => return false,
-            Some(addr) => {
-                let full_word_node = fst.node(addr);
-                // since we still have a prefix to evaluate, we shouldn't have arrived at a node
-                // with zero transitions. if so, we know the prefix won't match.
-                if full_word_node.is_empty() {
-                    return false
-                } else {
-                    addr
-                }
-            }
-        };
-
-        // does the key at the low end of the prefix range take us to a final state? if so, we know
-        // that at least one of the possible phrases is in the graph
-        match self.partial_search(full_word_addr, prefix_min_key) {
-            Some(addr) => {
-                let prefix_min_node = fst.node(addr);
-                if prefix_min_node.is_final() {
-                    return true
-                }
-            },
-            _ => (),
-        }
-
-        // does the key at the high end of the prefix range take us to a final state? if so, we know
-        // that at least one of the possible phrases is in the graph
-        match self.partial_search(full_word_addr, prefix_max_key) {
-            Some(addr) => {
-                let prefix_min_node = fst.node(addr);
-                if prefix_min_node.is_final() {
-                    return true
-                }
-            },
-            _ => (),
-        }
-
-		// if we're still not sure, we need to traverse the subtree bounded by the prefix range.
-        // Each iteration of the loop works like this:
-        //   (1) try to walk to the next node in the path of the min and max keys
-        //   (2) collect all of the nodes pointed to by transitions above the min path and below
-        //   the max path
-        //   (3) look at all of the nodes collected in (2) and determine whether they have
-        //   children that are final states.
-        let mut min_bound = full_word_addr;
-        let mut max_bound = full_word_addr;
-        // going byte-by-byte in the prefix min/max keys (each of which is three bytes)
-        for i in 0..3 {
-            // each iteration, we'll have to capture and explore the transitions whose inputs are
-            // between the ith byte of the min key and the ith byte of the max key. there's
-            // going to be overlap here, particularly for i=0, so we use a set to avoid duplicate
-            // effort.
-            let mut middle: HashSet::new();
-
-            // if the previous iteration found a new node on the min key's path:
-            if min_bound != None {
-                // find the node
-                let min_bound_node = fst.node(min_bound);
-                // select all of the transitions whose input is greater than the min key's ith byte
-                for t in min_bound_node.transitions().filter(|t| t.inp > prefix_min_key[i]) {
-                    // in the first iteration, the min and max bounds are the same, so we
-                    // need to avoid transitions that are above the max bound
-                    if (i > 0) || (t.inp < prefix_max_key[i]) {
-                        middle.insert(t.addr);
-                    }
-                }
-
-                // for the next iteration, try to walk to the next node on the min key's path
-                let min_bound = match min_bound_node.find_input(prefix_min_key[i]) {
-                    None => None,
-                    Some(a) => min_bound_node.transition_addr(a),
-                };
-            }
-
-            // if the previous iteration found a new node on the max key's path:
-            if max_bound != None {
-                // find the node
-                let max_bound_node = fst.node(max_bound);
-                // select all of the transitions whose input is less than the max key's ith byte
-                for t in max_bound_node.transitions().filter(|t| t.inp < prefix_max_key[i]) {
-                    // in the first iteration, the min and max bounds are the same, so we
-                    // need to avoid transitions that are below the min bound
-                    if (i > 0) || (t.inp > prefix_min_key[i]) {
-                        middle.insert(t.addr);
-                    }
-                }
-
-                // for the next iteration, try to walk to the next node on the max key's path
-                let max_bound = match max_bound_node.find_input(prefix_max_key[i]) {
-                    None => None,
-                    Some(a) => fst.node(max_bound.transition_addr(a)),
-                };
-            }
-
-            // For each node in the middle, we can be sure that walking another 1 or 2 bytes will
-            // be within the range of the min and max prefix keys. What we don't know is if that
-            // will take us to a final state. Here we'll check for that.
-            //
-            // The depth of the sort will always be 2 minus the iteration we're on.
-            //  - for i = 0, we've gone one byte in and need to go two more
-            //  - for i = 1, we've gone two bytes in and need to go one more
-            //  - for i = 2, we've gone three bytes in and just need to check where we're at
-            let depth = 2 - i;
-            for m in &middle {
-                match self.final_at_depth(m, depth) {
-                    true => return true,
-                    _ => (),
-                }
-            }
-        }
-
-        return true
-    }
-
-    /// Search the children of a node up to some depth and determine whether any of them is a final
-    /// state.
-    fn final_at_depth(&self, addr: CompiledAddr, depth: u8) -> bool {
-        let fst = self.0.as_fst();
-        // initialize with the start node
-        let mut addrs_to_visit = vec![addr];
-        // iterate to specified depth
-        for i in 0..depth+1 {
-            // start a new vec to capture this level's addrs
-            let mut level_addrs = vec![];
-            while addrs_to_visit.len() > 0 {
-                // pop an addr off the queue of to-visits
-                let this_addr = addrs_to_visit.pop();
-                // get the node at that addr
-                let this_node = fst.node(this_addr);
-                // for each transition that comes from this node, add its pointed-to node address
-                // to this level's addrs.
-                level_addrs.extend(this_node.transitions.map(|t| t.addr).collect());
-            }
-            // add this level's addrs to the to-visit queue
-            addrs_to_visit.extend(level_addrs);
-        }
-        // at this point we've collected the nodes that are depth-distance from the start node.
-        // check each one to see if it's a final state.
-        if addrs_to_visit.len() > 0 {
-            for a in addrs_to_visit {
-                let this_node = fst.node(a);
-                if a.is_final() {
-                    return true
-                }
-            }
-        }
-        return false
-    }
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, fst::Error> {
