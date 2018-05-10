@@ -12,7 +12,6 @@ pub struct FuzzyPhraseSetBuilder {
     // map will map from a pointer to an int
     words_to_tmpids: BTreeMap<String, u32>,
     directory: PathBuf,
-    finished: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -43,10 +42,6 @@ impl FuzzyPhraseSetBuilder {
     }
 
     pub fn insert(&mut self, phrase: &Vec<&str>) -> Result<(), Box<Error>> {
-        if self.finished {
-            panic!("already called finish");
-        }
-
         let mut tmpid_phrase: Vec<u32> = Vec::with_capacity(phrase.len());
         for word in phrase {
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
@@ -60,12 +55,7 @@ impl FuzzyPhraseSetBuilder {
         Ok(())
     }
 
-    pub fn finish(&mut self) -> Result<(), Box<Error>> {
-        if self.finished {
-            panic!("already called finish");
-        }
-        self.finished = true;
-
+    pub fn finish(mut self) -> Result<(), Box<Error>> {
         // we can go from name -> tmpid
         // we need to go from tmpid -> id
         // so build a mapping that does that
