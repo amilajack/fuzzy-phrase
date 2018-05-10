@@ -32,8 +32,7 @@ impl PhraseSet {
     /// Test membership of a single phrase
     pub fn contains(&self, phrase: QueryPhrase) -> bool {
         if phrase.has_prefix {
-            // TODO if last word is prefix, do some special shit
-            false
+            self.contains_prefix(phrase)
         } else {
             // if all words are Full
             // construct key and perform typical contains query
@@ -55,7 +54,6 @@ impl PhraseSet {
         return Some(node.addr())
     }
 
-    // TODO some special shit
     fn contains_prefix(&self, phrase: QueryPhrase) -> bool {
         let (prefix_min_key, prefix_max_key) = phrase.prefix_key_range().unwrap();
 
@@ -106,9 +104,12 @@ impl PhraseSet {
         }
 
 		// if we're still not sure, we need to traverse the subtree bounded by the prefix range.
-        // Each iteration of the loop works in two phases:
-        //   (1)
-        //
+        // Each iteration of the loop works like this:
+        //   (1) try to walk to the next node in the path of the min and max keys
+        //   (2) collect all of the nodes pointed to by transitions above the min path and below
+        //   the max path
+        //   (3) look at all of the nodes collected in (2) and determine whether they have
+        //   children that are final states.
         let mut min_bound = full_word_addr;
         let mut max_bound = full_word_addr;
         // going byte-by-byte in the prefix min/max keys (each of which is three bytes)
