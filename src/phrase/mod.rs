@@ -7,6 +7,7 @@ use std::path::Path;
 
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder};
+use fst::raw::{Node, Transition, CompiledAddr};
 
 use self::util::word_ids_to_key;
 use self::query::{QueryWord, QueryPhrase};
@@ -39,6 +40,125 @@ impl PhraseSet {
             let key = phrase.full_word_key();
             self.0.contains(key)
         }
+    }
+
+    fn partial_search(&self, start_addr: CompiledAddr, key: &[u8]) -> Option<CompiledAddr> {
+        let fst = self.0.as_fst();
+        let mut node = fst.node(start_addr);
+        // move through the tree byte by byte
+        for b in key {
+            node = match node.find_input(b) {
+                None => return None,
+                Some(i) => fst.node(node.transition_addr(i)),
+            }
+        }
+        return Some(node.addr())
+    }
+
+    // TODO some special shit
+    fn contains_prefix(&self, phrase: QueryPhrase) -> bool {
+        let (prefix_min_key, prefix_max_key) = phrase.prefix_key_range().unwrap();
+
+		// self as fst
+        let fst = &self.0.as_fst();
+        // start from root node
+        let root_node = fst.root();
+
+		// using the keys for the full words, walk the graph. if no path accepts these keys, stop
+        // here. result node should not be final.
+        let full_word_key = phrase.full_word_key();
+        let full_word_addr = match self.partial_search(root_node.addr(), full_word_key) {
+            None => return false,
+            Some(addr) => {
+                let full_word_node = fst.node(addr);
+                // since we still have a prefix to evaluate, we shouldn't have arrived at a node
+                // with zero transitions. if so, we know the prefix won't match.
+                if full_word_node.is_empty() {
+                    return false
+                } else {
+                    addr
+                }
+            }
+        };
+        match self.partial_search(full_word_addr, prefix_min_key) {
+            Some(addr) => {
+                let prefix_min_node = fst.node(addr);
+                if prefix_min_node.is_final() {
+                    return true
+                }
+            },
+            _ => (),
+        }
+        match self.partial_search(full_word_addr, prefix_max_key) {
+            Some(addr) => {
+                let prefix_min_node = fst.node(addr);
+                if prefix_min_node.is_final() {
+                    return true
+                }
+            },
+            _ => (),
+        }
+
+        let mut lo_bound = node.addr();
+        let mut hi_bound = node.addr();
+		// isolate the subtree
+        for i in 0..3 {
+            let mut middle: HashSet::new();
+            if lo_bound != None {
+                let lo_bound_node = fst.node(lo_bound);
+                let lo_bound = match lo_bound_node.find_input(prefix_min_key[i]) {
+                    None => None,
+                    Some(a) => lo_bound_node.transition_addr(a),
+                };
+                for t in lo_bound_node.transitions().filter(|t| t.inp > prefix_min_key[i]) {
+                    middle.insert(t.addr);
+                }
+            }
+            if hi_bound != None {
+                let hi_bound_node = fst.node(hi_bound);
+                let hi_bound = match hi_bound_node.find_input(prefix_max_key[i]) {
+                    None => None,
+                    Some(a) => fst.node(hi_bound.transition_addr(a)),
+                };
+                for t in hi_bound_node.transitions().filter(|t| t.inp < prefix_max_key[i]) {
+                    middle.insert(t.addr);
+                }
+            }
+
+            // for all middle nodes:
+            let depth = 2 - i;
+            for m in &middle {
+                match self.final_at_depth(m, depth) {
+                    true => return true,
+                    false => (),
+                }
+            }
+        }
+
+        return true
+    }
+
+    fn final_at_depth(&self, addr: CompiledAddr, depth: u8) -> bool {
+        let fst = self.0.as_fst();
+        let mut addrs_to_visit = vec![addr];
+        for i in 0..depth {
+            let mut level_addrs = vec![];
+            while addrs_to_visit.len() > 0 {
+                let this_addr = addrs_to_visit.pop();
+                let this_node = fst.node(this_addr);
+                level_addrs.extend(this_node.transitions.map(|t| t.addr).collect());
+            }
+            addrs_to_visit.extend(level_addrs);
+        }
+        if addrs_to_visit.len() > 0 {
+            for a in addrs_to_visit {
+                let this_node = fst.node(a);
+                if a.is_final() {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
