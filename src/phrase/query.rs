@@ -173,9 +173,6 @@ mod tests {
         assert_eq!(String::from("main"), s);
     }
 
-
-
-
     #[test]
     fn phrase_from_words() {
         let words = vec![
