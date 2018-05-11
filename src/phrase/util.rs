@@ -41,28 +41,25 @@ pub fn key_to_word_ids(key: &[u8]) -> Vec<u64> {
 }
 
 #[derive(Debug, Clone)]
-pub enum PhraseSetError {
-    ContainsIgnoresPrefix,
-    NonTerminalPrefix,
+pub struct PhraseSetError {
+    details: String
+}
+
+impl PhraseSetError {
+    pub fn new(msg: &str) -> PhraseSetError {
+        PhraseSetError{details: msg.to_string()}
+    }
 }
 
 impl fmt::Display for PhraseSetError {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            PhraseSetError::ContainsIgnoresPrefix => f.write_str("ContainsIgnoresPrefix"),
-            PhraseSetError::NonTerminalPrefix => f.write_str("NonTerminalPrefix"),
-        }
+        write!(f, "{}", self.details)
     }
 }
 impl error::Error for PhraseSetError {
     fn description(&self) -> &str {
-        match *self {
-            Error::ContainsIgnoresPrefix => f.write_str(
-                "contains and contains_prefix methods ignore QueryWord::Prefix types"),
-            PhraseSetError::NonTerminalPrefix => f.write_str(
-                "QueryPhrase can only have QueryWord::Prefix in final position"),
-        }
+        &self.details
     }
 }
 

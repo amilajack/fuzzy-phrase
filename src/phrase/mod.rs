@@ -7,11 +7,11 @@ use std::path::Path;
 
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder};
-use fst::raw::{Node, Transition, CompiledAddr};
+use fst::raw::{CompiledAddr};
 
 use self::util::word_ids_to_key;
 use self::util::PhraseSetError;
-use self::query::{QueryWord, QueryPhrase};
+use self::query::{QueryPhrase};
 
 pub struct PhraseSet(Set);
 
@@ -32,23 +32,23 @@ impl PhraseSet {
 
     /// Test membership of a single phrase
     pub fn contains(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError> {
-        if phrase.has_prefix() {
-            Err(PhraseSetError::ContainsIgnoresPrefix)
+        if phrase.has_prefix {
+            return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"));
         }
         let key = phrase.full_word_key();
         Ok(self.0.contains(key))
     }
 
     pub fn contains_prefix(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError>  {
-        if phrase.has_prefix() {
-            Err(PhraseSetError::ContainsIgnoresPrefix)
+        if phrase.has_prefix {
+            return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains_prefix only accepts QueryWord:Full"));
         }
         let key = phrase.full_word_key();
         let fst = self.0.as_fst();
-        let root_addr = fst.root_node().addr();
-        match self.partial_search(root_addr, key) {
-            None => return false,
-            Some(i) => return true,
+        let root_addr = fst.root().addr();
+        match self.partial_search(root_addr, &key) {
+            None => return Ok(false),
+            Some(..) => return Ok(true),
         }
     }
 
@@ -57,7 +57,7 @@ impl PhraseSet {
         let mut node = fst.node(start_addr);
         // move through the tree byte by byte
         for b in key {
-            node = match node.find_input(b) {
+            node = match node.find_input(*b) {
                 None => return None,
                 Some(i) => fst.node(node.transition_addr(i)),
             }
@@ -125,6 +125,7 @@ mod tests {
     use std::fs::File;
     use fst::Streamer;
     use super::*;
+    use self::query::{QueryPhrase, QueryWord};
 
     #[test]
     fn insert_phrases_memory() {
@@ -220,11 +221,11 @@ mod tests {
 
         let matching_word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
         let matching_phrase = QueryPhrase::new(&matching_word_seq);
-        assert_eq!(true, phrase_set.contains(matching_phrase));
+        assert_eq!(true, phrase_set.contains(matching_phrase).unwrap());
 
         let missing_word_seq = [ &words[0][0], &words[1][0] ];
         let missing_phrase = QueryPhrase::new(&missing_word_seq);
-        assert_eq!(false, phrase_set.contains(missing_phrase));
+        assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
     }
 }
 

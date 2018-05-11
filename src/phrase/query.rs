@@ -42,8 +42,8 @@ impl<'a> QueryPhrase<'a> {
             &QueryWord::Prefix {..} => true,
         };
         // disallow prefixes in any position except the final position
-        for word in words[..length] {
-            match word {
+        for i in 0..length-1 {
+            match words[i] {
                 &QueryWord::Prefix {..} => {
                     panic!("Non-terminal QueryWord::Prefix found");
                 },
@@ -358,7 +358,7 @@ mod tests {
             vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
         ];
         let word_seq = [ &words[0][0], &words[2][0], &words[1][0] ];
-        let phrase = QueryPhrase::new(&word_seq[..]);
+        QueryPhrase::new(&word_seq[..]);
     }
 
 }
