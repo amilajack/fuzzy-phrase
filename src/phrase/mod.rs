@@ -227,5 +227,30 @@ mod tests {
         let missing_phrase = QueryPhrase::new(&missing_word_seq);
         assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
     }
+
+    #[test]
+    fn contains_prefix_query() {
+        let mut build = PhraseSetBuilder::memory();
+        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
+        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
+        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        let bytes = build.into_inner().unwrap();
+
+        let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
+
+        let words = vec![
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+        ];
+
+        let matching_word_seq = [ &words[0][0], &words[1][0] ];
+        let matching_phrase = QueryPhrase::new(&matching_word_seq);
+        assert_eq!(true, phrase_set.contains_prefix(matching_phrase).unwrap());
+
+        let missing_word_seq = [ &words[0][0], &words[2][0] ];
+        let missing_phrase = QueryPhrase::new(&missing_word_seq);
+        assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
+    }
 }
 
