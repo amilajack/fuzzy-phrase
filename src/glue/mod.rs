@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::error::Error;
-use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufWriter};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
 use std::fs;
 
-use ::prefix::PrefixSetBuilder;
-use ::phrase::PhraseSetBuilder;
+use serde_json;
+
+use ::prefix::{PrefixSet, PrefixSetBuilder};
+use ::phrase::{PhraseSet, PhraseSetBuilder};
 
 #[derive(Default, Debug)]
 pub struct FuzzyPhraseSetBuilder {
@@ -17,7 +19,7 @@ pub struct FuzzyPhraseSetBuilder {
     directory: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct FuzzyPhraseSetMetadata {
     index_type: String,
     format_version: u32,
@@ -83,7 +85,7 @@ impl FuzzyPhraseSetBuilder {
 
         prefix_set_builder.finish()?;
 
-        // next, renumber all of the current phrases with real numbers
+        // next, renumber all of the current phrases with real rather than temp IDs
         for phrase in self.phrases.iter_mut() {
             for word_idx in (*phrase).iter_mut() {
                 *word_idx = tmpids_to_ids[*word_idx as usize];
@@ -101,6 +103,45 @@ impl FuzzyPhraseSetBuilder {
 
         phrase_set_builder.finish()?;
 
+        let metadata = FuzzyPhraseSetMetadata::default();
+        let metadata_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("metadata.json")))?);
+        serde_json::to_writer_pretty(metadata_writer, &metadata)?;
+
         Ok(())
+    }
+}
+
+pub struct FuzzyPhraseSet {
+    prefix_set: PrefixSet,
+    phrase_set: PhraseSet,
+}
+
+impl FuzzyPhraseSet {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
+        let directory = path.as_ref();
+
+        if !directory.exists() || !directory.is_dir() {
+            return Err(Box::new(IoError::new(IoErrorKind::NotFound, "File does not exist or is not a directory")));
+        }
+
+        let metadata_reader = BufReader::new(fs::File::open(directory.join(Path::new("metadata.json")))?);
+        let metadata: FuzzyPhraseSetMetadata = serde_json::from_reader(metadata_reader)?;
+        if metadata != FuzzyPhraseSetMetadata::default() {
+            return Err(Box::new(IoError::new(IoErrorKind::InvalidData, "Unexpected structure metadata")));
+        }
+
+        let prefix_path = directory.join(Path::new("prefix.fst"));
+        if !prefix_path.exists() {
+            return Err(Box::new(IoError::new(IoErrorKind::NotFound, "Prefix FST does not exist")));
+        }
+        let prefix_set = unsafe { PrefixSet::from_path(&prefix_path) }?;
+
+        let phrase_path = directory.join(Path::new("phrase.fst"));
+        if !phrase_path.exists() {
+            return Err(Box::new(IoError::new(IoErrorKind::NotFound, "Phrase FST does not exist")));
+        }
+        let phrase_set = unsafe { PhraseSet::from_path(&phrase_path) }?;
+
+        Ok(FuzzyPhraseSet { prefix_set, phrase_set })
     }
 }
