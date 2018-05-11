@@ -223,16 +223,16 @@ mod tests {
         ];
 
         let matching_word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let matching_phrase = QueryPhrase::new(&matching_word_seq);
+        let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
         assert_eq!(true, phrase_set.contains(matching_phrase).unwrap());
 
         let missing_word_seq = [ &words[0][0], &words[1][0] ];
-        let missing_phrase = QueryPhrase::new(&missing_word_seq);
+        let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
         assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
 
         let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
         let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
-        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
         assert!(phrase_set.contains(has_prefix_phrase).is_err());
     }
 
@@ -253,16 +253,16 @@ mod tests {
         ];
 
         let matching_word_seq = [ &words[0][0], &words[1][0] ];
-        let matching_phrase = QueryPhrase::new(&matching_word_seq);
+        let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
         assert_eq!(true, phrase_set.contains_prefix(matching_phrase).unwrap());
 
         let missing_word_seq = [ &words[0][0], &words[2][0] ];
-        let missing_phrase = QueryPhrase::new(&missing_word_seq);
+        let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
         assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
 
         let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
         let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
-        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
         assert!(phrase_set.contains_prefix(has_prefix_phrase).is_err());
     }
 

@@ -51,7 +51,7 @@ pub struct QueryPhrase<'a> {
 }
 
 impl<'a> QueryPhrase<'a> {
-    pub fn new(words: &'a[&'a QueryWord]) -> QueryPhrase<'a> {
+    pub fn new(words: &'a[&'a QueryWord]) -> Result<QueryPhrase<'a>, util::PhraseSetError> {
         let length: usize = words.len();
         let has_prefix: bool = match words[length - 1] {
             &QueryWord::Full {..} => false,
@@ -61,17 +61,14 @@ impl<'a> QueryPhrase<'a> {
         for i in 0..length-1 {
             match words[i] {
                 &QueryWord::Prefix {..} => {
-                    panic!("Non-terminal QueryWord::Prefix found");
+                    return Err(util::PhraseSetError::new(
+                            "QueryPhrase may only have QueryWord::Prefix in final position."));
                 },
                 _ => ()
             }
         }
 
-        QueryPhrase {
-            words,
-            length,
-            has_prefix,
-        }
+        Ok(QueryPhrase { words, length, has_prefix })
     }
 
     /// Return the length of the phrase (number of words)
@@ -183,7 +180,7 @@ mod tests {
 
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
 
-        let phrase = QueryPhrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
         assert_eq!(3, phrase.len());
         assert_eq!(false, phrase.has_prefix);
         assert_eq!(
@@ -195,10 +192,10 @@ mod tests {
             phrase.full_word_key()
         );
 
-        let shingle_one = QueryPhrase::new(&word_seq[0..2]);
+        let shingle_one = QueryPhrase::new(&word_seq[0..2]).unwrap();
         assert_eq!(2, shingle_one.len());
 
-        let shingle_two = QueryPhrase::new(&word_seq[1..3]);
+        let shingle_two = QueryPhrase::new(&word_seq[1..3]).unwrap();
         assert_eq!(2, shingle_two.len());
 
     }
@@ -216,7 +213,7 @@ mod tests {
         ];
 
         let word_seq_a = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let phrase_a = QueryPhrase::new(&word_seq_a);
+        let phrase_a = QueryPhrase::new(&word_seq_a).unwrap();
 
         assert_eq!(0, phrase_a.total_edit_distance());
         assert_eq!(false, phrase_a.has_prefix);
@@ -246,7 +243,7 @@ mod tests {
         assert_eq!(vec![1u32, 61_528u32, 561_235u32], word_ids);
 
         let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
-        let phrase_b = QueryPhrase::new(&word_seq_b);
+        let phrase_b = QueryPhrase::new(&word_seq_b).unwrap();
         assert_eq!(2, phrase_b.total_edit_distance());
         assert_eq!(false, phrase_b.has_prefix);
         assert_eq!(
@@ -283,7 +280,7 @@ mod tests {
             vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 2 } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0] ];
-        let phrase = QueryPhrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
 
         assert_eq!(3, phrase.total_edit_distance());
         assert_eq!(false, phrase.has_prefix);
@@ -329,7 +326,7 @@ mod tests {
             vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let phrase = QueryPhrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
 
         assert_eq!(0, phrase.total_edit_distance());
         assert_eq!(true, phrase.has_prefix);
@@ -391,7 +388,7 @@ mod tests {
             vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
         ];
         let word_seq = [ &words[0][0], &words[2][0], &words[1][0] ];
-        QueryPhrase::new(&word_seq[..]);
+        QueryPhrase::new(&word_seq[..]).unwrap();
     }
 
 }
