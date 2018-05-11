@@ -7,7 +7,7 @@ pub enum QueryWord {
     Full {
         string: String,
         id: u32,
-        edit_distance: i8,
+        edit_distance: u8,
     },
 
     /// A `Prefix` is a string that is the prefix to more than one full word, and includes an id_range field,
@@ -64,7 +64,7 @@ impl<'a> QueryPhrase<'a> {
     }
 
     /// Sum the edit distances of the full words in the phrase
-    pub fn total_edit_distance(&self) -> i8 {
+    pub fn total_edit_distance(&self) -> u8 {
         let mut total_edit_distance = 0;
         for word in self.words {
             match word {
