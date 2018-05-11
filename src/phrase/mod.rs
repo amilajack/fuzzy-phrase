@@ -30,7 +30,8 @@ pub struct PhraseSet(Set);
 ///
 impl PhraseSet {
 
-    /// Test membership of a single phrase
+    /// Test membership of a single phrase. Returns true iff the phrase matches a complete phrase
+    /// in the set. Wraps the underlying Set::contains method.
     pub fn contains(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError> {
         if phrase.has_prefix {
             return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"));
@@ -39,6 +40,8 @@ impl PhraseSet {
         Ok(self.0.contains(key))
     }
 
+    /// Test whether a query phrase can be found at the beginning of any phrase in the Set. Also
+    /// known as a "starts with" search.
     pub fn contains_prefix(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError>  {
         if phrase.has_prefix {
             return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains_prefix only accepts QueryWord:Full"));
@@ -52,6 +55,8 @@ impl PhraseSet {
         }
     }
 
+    /// Helper function for doing a byte-by-byte walk through the phrase graph, staring at any
+    /// arbitrary node. Not to be used directly.
     fn partial_search(&self, start_addr: CompiledAddr, key: &[u8]) -> Option<CompiledAddr> {
         let fst = self.0.as_fst();
         let mut node = fst.node(start_addr);
@@ -64,8 +69,6 @@ impl PhraseSet {
         }
         return Some(node.addr())
     }
-
-
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, fst::Error> {
