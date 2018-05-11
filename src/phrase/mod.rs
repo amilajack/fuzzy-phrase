@@ -217,9 +217,9 @@ mod tests {
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
         ];
 
         let matching_word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
@@ -230,7 +230,7 @@ mod tests {
         let missing_phrase = QueryPhrase::new(&missing_word_seq);
         assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
 
-        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u32, 561_531u32) };
+        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
         let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
         let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
         assert!(phrase_set.contains(has_prefix_phrase).is_err());
@@ -247,9 +247,9 @@ mod tests {
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
         ];
 
         let matching_word_seq = [ &words[0][0], &words[1][0] ];
@@ -260,7 +260,7 @@ mod tests {
         let missing_phrase = QueryPhrase::new(&missing_word_seq);
         assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
 
-        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u32, 561_531u32) };
+        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
         let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
         let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
         assert!(phrase_set.contains_prefix(has_prefix_phrase).is_err());
