@@ -229,6 +229,11 @@ mod tests {
         let missing_word_seq = [ &words[0][0], &words[1][0] ];
         let missing_phrase = QueryPhrase::new(&missing_word_seq);
         assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
+
+        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) };
+        let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        assert!(phrase_set.contains(has_prefix_phrase).is_err());
     }
 
     #[test]
@@ -254,6 +259,12 @@ mod tests {
         let missing_word_seq = [ &words[0][0], &words[2][0] ];
         let missing_phrase = QueryPhrase::new(&missing_word_seq);
         assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
+
+        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) };
+        let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        assert!(phrase_set.contains_prefix(has_prefix_phrase).is_err());
     }
+
 }
 
