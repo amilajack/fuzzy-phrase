@@ -41,6 +41,16 @@ impl<'a> QueryPhrase<'a> {
             &QueryWord::Full {..} => false,
             &QueryWord::Prefix {..} => true,
         };
+        // disallow prefixes in any position except the final position
+        for word in words[..length] {
+            match word {
+                &QueryWord::Prefix {..} => {
+                    panic!("Non-terminal QueryWord::Prefix found");
+                },
+                _ => ()
+            }
+        }
+
         QueryPhrase {
             words,
             length,
@@ -336,6 +346,19 @@ mod tests {
         // should be 1 prefix, 3 ids
         assert_eq!(1, prefix_count);
         assert_eq!(vec![561_528, 561_529, 561_530], prefix_ids);
+    }
+
+    #[test]
+    #[should_panic]
+    fn non_terminal_prefix() {
+
+        let words = vec![
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
+        ];
+        let word_seq = [ &words[0][0], &words[2][0], &words[1][0] ];
+        let phrase = QueryPhrase::new(&word_seq[..]);
     }
 
 }
