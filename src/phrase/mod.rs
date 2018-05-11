@@ -7,11 +7,11 @@ use std::path::Path;
 
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder};
-use fst::raw::{Node, Transition, CompiledAddr};
+use fst::raw::{CompiledAddr};
 
 use self::util::word_ids_to_key;
 use self::util::PhraseSetError;
-use self::query::{QueryWord, QueryPhrase};
+use self::query::{QueryPhrase};
 
 pub struct PhraseSet(Set);
 
@@ -30,34 +30,39 @@ pub struct PhraseSet(Set);
 ///
 impl PhraseSet {
 
-    /// Test membership of a single phrase
+    /// Test membership of a single phrase. Returns true iff the phrase matches a complete phrase
+    /// in the set. Wraps the underlying Set::contains method.
     pub fn contains(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError> {
-        if phrase.has_prefix() {
-            Err(PhraseSetError::ContainsIgnoresPrefix)
+        if phrase.has_prefix {
+            return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"));
         }
         let key = phrase.full_word_key();
         Ok(self.0.contains(key))
     }
 
+    /// Test whether a query phrase can be found at the beginning of any phrase in the Set. Also
+    /// known as a "starts with" search.
     pub fn contains_prefix(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError>  {
-        if phrase.has_prefix() {
-            Err(PhraseSetError::ContainsIgnoresPrefix)
+        if phrase.has_prefix {
+            return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains_prefix only accepts QueryWord:Full"));
         }
         let key = phrase.full_word_key();
         let fst = self.0.as_fst();
-        let root_addr = fst.root_node().addr();
-        match self.partial_search(root_addr, key) {
-            None => return false,
-            Some(i) => return true,
+        let root_addr = fst.root().addr();
+        match self.partial_search(root_addr, &key) {
+            None => return Ok(false),
+            Some(..) => return Ok(true),
         }
     }
 
+    /// Helper function for doing a byte-by-byte walk through the phrase graph, staring at any
+    /// arbitrary node. Not to be used directly.
     fn partial_search(&self, start_addr: CompiledAddr, key: &[u8]) -> Option<CompiledAddr> {
         let fst = self.0.as_fst();
         let mut node = fst.node(start_addr);
         // move through the tree byte by byte
         for b in key {
-            node = match node.find_input(b) {
+            node = match node.find_input(*b) {
                 None => return None,
                 Some(i) => fst.node(node.transition_addr(i)),
             }
@@ -284,6 +289,7 @@ mod tests {
     use std::fs::File;
     use fst::Streamer;
     use super::*;
+    use self::query::{QueryPhrase, QueryWord};
 
     #[test]
     fn insert_phrases_memory() {
@@ -379,11 +385,47 @@ mod tests {
 
         let matching_word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
         let matching_phrase = QueryPhrase::new(&matching_word_seq);
-        assert_eq!(true, phrase_set.contains(matching_phrase));
+        assert_eq!(true, phrase_set.contains(matching_phrase).unwrap());
 
         let missing_word_seq = [ &words[0][0], &words[1][0] ];
         let missing_phrase = QueryPhrase::new(&missing_word_seq);
-        assert_eq!(false, phrase_set.contains(missing_phrase));
+        assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
+
+        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) };
+        let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        assert!(phrase_set.contains(has_prefix_phrase).is_err());
     }
+
+    #[test]
+    fn contains_prefix_query() {
+        let mut build = PhraseSetBuilder::memory();
+        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
+        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
+        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        let bytes = build.into_inner().unwrap();
+
+        let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
+
+        let words = vec![
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+        ];
+
+        let matching_word_seq = [ &words[0][0], &words[1][0] ];
+        let matching_phrase = QueryPhrase::new(&matching_word_seq);
+        assert_eq!(true, phrase_set.contains_prefix(matching_phrase).unwrap());
+
+        let missing_word_seq = [ &words[0][0], &words[2][0] ];
+        let missing_phrase = QueryPhrase::new(&missing_word_seq);
+        assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
+
+        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) };
+        let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        assert!(phrase_set.contains_prefix(has_prefix_phrase).is_err());
+    }
+
 }
 
