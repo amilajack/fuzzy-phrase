@@ -6,7 +6,7 @@ pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
         string: String,
-        id: u64,
+        id: u32,
         edit_distance: i8,
     },
 
@@ -14,7 +14,7 @@ pub enum QueryWord {
     /// which of identifiers.
     Prefix {
         string: String,
-        id_range: (u64, u64),
+        id_range: (u32, u32),
     },
 }
 
@@ -79,7 +79,7 @@ impl<'a> QueryPhrase<'a> {
 
     /// Generate a key from the ids of the full words in this phrase
     pub fn full_word_key(&self) -> Vec<u8> {
-        let mut word_ids: Vec<u64> = vec![];
+        let mut word_ids: Vec<u32> = vec![];
         for word in self.words {
             match word {
                 &&QueryWord::Full{ ref id, .. } => {
@@ -143,9 +143,9 @@ mod tests {
     #[test]
     fn phrase_from_words() {
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u32, edit_distance: 0 } ],
         ];
 
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
@@ -174,11 +174,11 @@ mod tests {
     fn phrase_multiple_combinations() {
         // three words, two variants for third word
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("Evergreen"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("Terrace"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("Evergreen"), id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("Terrace"), id: 61_528u32, edit_distance: 0 } ],
             vec![
-                QueryWord::Full{ string: String::from("Springfield"), id: 561_235u64, edit_distance: 0 },
-                QueryWord::Full{ string: String::from("Sprungfeld"), id: 561_247u64, edit_distance: 2 },
+                QueryWord::Full{ string: String::from("Springfield"), id: 561_235u32, edit_distance: 0 },
+                QueryWord::Full{ string: String::from("Sprungfeld"), id: 561_247u32, edit_distance: 2 },
             ],
         ];
 
@@ -210,7 +210,7 @@ mod tests {
         }
 
         // should be 2 full words, 2 ids
-        assert_eq!(vec![1u64, 61_528u64, 561_235u64], word_ids);
+        assert_eq!(vec![1u32, 61_528u32, 561_235u32], word_ids);
 
         let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
         let phrase_b = QueryPhrase::new(&word_seq_b);
@@ -239,15 +239,15 @@ mod tests {
         }
 
         // should be 2 full words, 2 ids
-        assert_eq!(vec![1u64, 61_528u64, 561_247u64], word_ids);
+        assert_eq!(vec![1u32, 61_528u32, 561_247u32], word_ids);
     }
 
     #[test]
     fn two_fuzzy_matches() {
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 1 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 2 } ],
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u32, edit_distance: 1 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u32, edit_distance: 2 } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0] ];
         let phrase = QueryPhrase::new(&word_seq[..]);
@@ -291,9 +291,9 @@ mod tests {
     fn two_exact_matches_one_prefix() {
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u32, 561_531u32) } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
         let phrase = QueryPhrase::new(&word_seq[..]);
@@ -353,9 +353,9 @@ mod tests {
     fn non_terminal_prefix() {
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
+            vec![ QueryWord::Full{ string: String::from("100"), id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u32, 561_531u32) } ],
         ];
         let word_seq = [ &words[0][0], &words[2][0], &words[1][0] ];
         QueryPhrase::new(&word_seq[..]);
