@@ -46,7 +46,7 @@ impl FuzzyPhraseSetBuilder {
         Ok(FuzzyPhraseSetBuilder { directory, ..Default::default() })
     }
 
-    pub fn insert(&mut self, phrase: &Vec<&str>) -> Result<(), Box<Error>> {
+    pub fn insert(&mut self, phrase: &[&str]) -> Result<(), Box<Error>> {
         let mut tmpid_phrase: Vec<u64> = Vec::with_capacity(phrase.len());
         for word in phrase {
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
@@ -143,5 +143,36 @@ impl FuzzyPhraseSet {
         let phrase_set = unsafe { PhraseSet::from_path(&phrase_path) }?;
 
         Ok(FuzzyPhraseSet { prefix_set, phrase_set })
+    }
+
+    pub fn contains(&self, phrase: &Vec<&str>) -> bool {
+        let mut id_phrase: Vec<u64> = vec![0; phrase.len()];
+        for (idx, word) in phrase.iter().enumerate() {
+            match self.prefix_set.get(&word) {
+                Some(word_id) => { id_phrase[idx] = word_id },
+                None => { return false }
+            }
+        }
+        self.phrase_set.contains(&id_phrase)
+    }
+
+    pub fn contains_prefix(&self, phrase: &[&str]) -> bool {
+        let mut id_phrase: Vec<u64> = vec![0; phrase.len()];
+        if phrase.len() > 0 {
+            let last_idx = phrase.len() - 1;
+            for (idx, word) in phrase[..last_idx].iter().enumerate() {
+                match self.prefix_set.get(&word) {
+                    Some(word_id) => { id_phrase[idx] = word_id },
+                    None => { return false }
+                }
+            }
+            match self.prefix_set.get_prefix_range(&phrase[last_idx]) {
+                // TODO: do something to actually make a range
+                Some((word_id_start, _word_id_end)) => { id_phrase[last_idx] = word_id_start.value() },
+                None => { return false }
+            }
+        }
+        // TODO: call contains_prefix
+        self.phrase_set.contains(&id_phrase)
     }
 }
