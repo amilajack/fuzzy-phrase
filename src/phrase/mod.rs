@@ -1,4 +1,5 @@
 pub mod util;
+pub mod query;
 
 use std::io;
 #[cfg(feature = "mmap")]
@@ -6,8 +7,11 @@ use std::path::Path;
 
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder};
+use fst::raw::{CompiledAddr};
 
-use self::util::phrase_to_key;
+use self::util::word_ids_to_key;
+use self::util::PhraseSetError;
+use self::query::{QueryPhrase};
 
 pub struct PhraseSet(Set);
 
@@ -18,15 +22,52 @@ pub struct PhraseSet(Set);
 /// encoded as a series of 3 bytes.  For example, the three-word phrase "1## Main Street" will be
 /// represented over 9 transitions, with one byte each.
 ///
-/// tokens:      1##          main          street
-/// integers:    21           457           109821
-/// three bytes: [0, 0, 21]   [0, 1, 201]   [1, 172, 253]
+/// | tokens  | integers  | three_bytes   |
+/// |---------|-----------|---------------|
+/// | 100     | 21        | [0,   0,  21] |
+/// | main    | 457       | [0,   1, 201] |
+/// | street  | 109821    | [1, 172, 253] |
+///
 impl PhraseSet {
 
-    /// Test membership of a single phrase
-    pub fn contains(&self, phrase: &[u64]) -> bool {
-        let key = phrase_to_key(&phrase);
-        self.0.contains(key)
+    /// Test membership of a single phrase. Returns true iff the phrase matches a complete phrase
+    /// in the set. Wraps the underlying Set::contains method.
+    pub fn contains(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError> {
+        if phrase.has_prefix {
+            return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"));
+        }
+        let key = phrase.full_word_key();
+        Ok(self.0.contains(key))
+    }
+
+    /// Test whether a query phrase can be found at the beginning of any phrase in the Set. Also
+    /// known as a "starts with" search.
+    pub fn contains_prefix(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError>  {
+        if phrase.has_prefix {
+            return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains_prefix only accepts QueryWord:Full"));
+        }
+        let key = phrase.full_word_key();
+        let fst = self.0.as_fst();
+        let root_addr = fst.root().addr();
+        match self.partial_search(root_addr, &key) {
+            None => return Ok(false),
+            Some(..) => return Ok(true),
+        }
+    }
+
+    /// Helper function for doing a byte-by-byte walk through the phrase graph, staring at any
+    /// arbitrary node. Not to be used directly.
+    fn partial_search(&self, start_addr: CompiledAddr, key: &[u8]) -> Option<CompiledAddr> {
+        let fst = self.0.as_fst();
+        let mut node = fst.node(start_addr);
+        // move through the tree byte by byte
+        for b in key {
+            node = match node.find_input(*b) {
+                None => return None,
+                Some(i) => fst.node(node.transition_addr(i)),
+            }
+        }
+        return Some(node.addr())
     }
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
@@ -38,7 +79,6 @@ impl PhraseSet {
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, fst::Error> {
         Set::from_path(path).map(PhraseSet)
     }
-
 
 }
 
@@ -67,8 +107,8 @@ impl<W: io::Write> PhraseSetBuilder<W> {
     }
 
     /// Insert a phrase, specified as an array of word identifiers.
-    pub fn insert(&mut self, phrase: &[u64]) -> Result<(), fst::Error> {
-        let key = phrase_to_key(phrase);
+    pub fn insert(&mut self, phrase: &[u32]) -> Result<(), fst::Error> {
+        let key = word_ids_to_key(phrase);
         self.0.insert(key)
     }
 
@@ -88,13 +128,14 @@ mod tests {
     use std::fs::File;
     use fst::Streamer;
     use super::*;
+    use self::query::{QueryPhrase, QueryWord};
 
     #[test]
     fn insert_phrases_memory() {
         let mut build = PhraseSetBuilder::memory();
-        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
-        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
-        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
         let bytes = build.into_inner().unwrap();
 
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
@@ -131,9 +172,9 @@ mod tests {
         let wtr = io::BufWriter::new(File::create("/tmp/phrase-set.fst").unwrap());
 
         let mut build = PhraseSetBuilder::new(wtr).unwrap();
-        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
-        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
-        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
         build.finish().unwrap();
 
         let phrase_set = unsafe { PhraseSet::from_path("/tmp/phrase-set.fst") }.unwrap();
@@ -164,5 +205,66 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn contains_query() {
+        let mut build = PhraseSetBuilder::memory();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
+        let bytes = build.into_inner().unwrap();
+
+        let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
+
+        let words = vec![
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
+        ];
+
+        let matching_word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
+        let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
+        assert_eq!(true, phrase_set.contains(matching_phrase).unwrap());
+
+        let missing_word_seq = [ &words[0][0], &words[1][0] ];
+        let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
+        assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
+
+        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
+        let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
+        assert!(phrase_set.contains(has_prefix_phrase).is_err());
+    }
+
+    #[test]
+    fn contains_prefix_query() {
+        let mut build = PhraseSetBuilder::memory();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
+        let bytes = build.into_inner().unwrap();
+
+        let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
+
+        let words = vec![
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
+        ];
+
+        let matching_word_seq = [ &words[0][0], &words[1][0] ];
+        let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
+        assert_eq!(true, phrase_set.contains_prefix(matching_phrase).unwrap());
+
+        let missing_word_seq = [ &words[0][0], &words[2][0] ];
+        let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
+        assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
+
+        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
+        let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
+        assert!(phrase_set.contains_prefix(has_prefix_phrase).is_err());
+    }
+
 }
 
