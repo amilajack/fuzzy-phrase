@@ -5,17 +5,33 @@ use super::util;
 pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
-        string: String,
-        id: u64,
-        edit_distance: i8,
+        id: u32,
+        edit_distance: u8,
     },
 
     /// A `Prefix` is a string that is the prefix to more than one full word, and includes an id_range field,
     /// which of identifiers.
     Prefix {
-        string: String,
-        id_range: (u64, u64),
+        id_range: (u32, u32),
     },
+}
+
+impl QueryWord
+{
+    pub fn to_string<'a, T:Fn(u32) -> &'a str>(&self, id_to_string: T) -> String {
+        match &self {
+            &QueryWord::Full {id, ..} => {
+                let s = format!("{}", id_to_string(*id));
+                return s
+            },
+            &QueryWord::Prefix {id_range, ..} => {
+                let s_start: &str = id_to_string(id_range.0);
+                let s_end: &str = id_to_string(id_range.1);
+                let s = format!("{}..{}", s_start, s_end);
+                return s
+            }
+        }
+    }
 }
 
 /// A specialized container for a sequence of `QueryWord`s.
@@ -35,7 +51,7 @@ pub struct QueryPhrase<'a> {
 }
 
 impl<'a> QueryPhrase<'a> {
-    pub fn new(words: &'a[&'a QueryWord]) -> QueryPhrase<'a> {
+    pub fn new(words: &'a[&'a QueryWord]) -> Result<QueryPhrase<'a>, util::PhraseSetError> {
         let length: usize = words.len();
         let has_prefix: bool = match words[length - 1] {
             &QueryWord::Full {..} => false,
@@ -45,17 +61,14 @@ impl<'a> QueryPhrase<'a> {
         for i in 0..length-1 {
             match words[i] {
                 &QueryWord::Prefix {..} => {
-                    panic!("Non-terminal QueryWord::Prefix found");
+                    return Err(util::PhraseSetError::new(
+                            "QueryPhrase may only have QueryWord::Prefix in final position."));
                 },
                 _ => ()
             }
         }
 
-        QueryPhrase {
-            words,
-            length,
-            has_prefix,
-        }
+        Ok(QueryPhrase { words, length, has_prefix })
     }
 
     /// Return the length of the phrase (number of words)
@@ -64,7 +77,7 @@ impl<'a> QueryPhrase<'a> {
     }
 
     /// Sum the edit distances of the full words in the phrase
-    pub fn total_edit_distance(&self) -> i8 {
+    pub fn total_edit_distance(&self) -> u8 {
         let mut total_edit_distance = 0;
         for word in self.words {
             match word {
@@ -79,7 +92,7 @@ impl<'a> QueryPhrase<'a> {
 
     /// Generate a key from the ids of the full words in this phrase
     pub fn full_word_key(&self) -> Vec<u8> {
-        let mut word_ids: Vec<u64> = vec![];
+        let mut word_ids: Vec<u32> = vec![];
         for word in self.words {
             match word {
                 &&QueryWord::Full{ ref id, .. } => {
@@ -139,18 +152,35 @@ impl<'a> IntoIterator for &'a QueryPhrase<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn query_word_to_string() {
+        let mut id_to_string_map = HashMap::new();
+
+        id_to_string_map.insert(1u32, String::from("100"));
+        id_to_string_map.insert(61_528u32, String::from("main"));
+        id_to_string_map.insert(561_528u32, String::from("st"));
+
+        let query_word = QueryWord::Full{ id: 61_528u32, edit_distance: 0 };
+
+        let id_to_string_closure = |id: u32| id_to_string_map.get(&id).unwrap().as_str();
+
+        let s = query_word.to_string(id_to_string_closure);
+        assert_eq!(String::from("main"), s);
+    }
 
     #[test]
     fn phrase_from_words() {
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
         ];
 
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
 
-        let phrase = QueryPhrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
         assert_eq!(3, phrase.len());
         assert_eq!(false, phrase.has_prefix);
         assert_eq!(
@@ -162,10 +192,10 @@ mod tests {
             phrase.full_word_key()
         );
 
-        let shingle_one = QueryPhrase::new(&word_seq[0..2]);
+        let shingle_one = QueryPhrase::new(&word_seq[0..2]).unwrap();
         assert_eq!(2, shingle_one.len());
 
-        let shingle_two = QueryPhrase::new(&word_seq[1..3]);
+        let shingle_two = QueryPhrase::new(&word_seq[1..3]).unwrap();
         assert_eq!(2, shingle_two.len());
 
     }
@@ -174,16 +204,16 @@ mod tests {
     fn phrase_multiple_combinations() {
         // three words, two variants for third word
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("Evergreen"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("Terrace"), id: 61_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
             vec![
-                QueryWord::Full{ string: String::from("Springfield"), id: 561_235u64, edit_distance: 0 },
-                QueryWord::Full{ string: String::from("Sprungfeld"), id: 561_247u64, edit_distance: 2 },
+                QueryWord::Full{ id: 561_235u32, edit_distance: 0 },
+                QueryWord::Full{ id: 561_247u32, edit_distance: 2 },
             ],
         ];
 
         let word_seq_a = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let phrase_a = QueryPhrase::new(&word_seq_a);
+        let phrase_a = QueryPhrase::new(&word_seq_a).unwrap();
 
         assert_eq!(0, phrase_a.total_edit_distance());
         assert_eq!(false, phrase_a.has_prefix);
@@ -210,10 +240,10 @@ mod tests {
         }
 
         // should be 2 full words, 2 ids
-        assert_eq!(vec![1u64, 61_528u64, 561_235u64], word_ids);
+        assert_eq!(vec![1u32, 61_528u32, 561_235u32], word_ids);
 
         let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
-        let phrase_b = QueryPhrase::new(&word_seq_b);
+        let phrase_b = QueryPhrase::new(&word_seq_b).unwrap();
         assert_eq!(2, phrase_b.total_edit_distance());
         assert_eq!(false, phrase_b.has_prefix);
         assert_eq!(
@@ -239,18 +269,18 @@ mod tests {
         }
 
         // should be 2 full words, 2 ids
-        assert_eq!(vec![1u64, 61_528u64, 561_247u64], word_ids);
+        assert_eq!(vec![1u32, 61_528u32, 561_247u32], word_ids);
     }
 
     #[test]
     fn two_fuzzy_matches() {
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 1 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 2 } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 1 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 2 } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0] ];
-        let phrase = QueryPhrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
 
         assert_eq!(3, phrase.total_edit_distance());
         assert_eq!(false, phrase.has_prefix);
@@ -291,12 +321,12 @@ mod tests {
     fn two_exact_matches_one_prefix() {
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
         ];
         let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let phrase = QueryPhrase::new(&word_seq[..]);
+        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
 
         assert_eq!(0, phrase.total_edit_distance());
         assert_eq!(true, phrase.has_prefix);
@@ -353,12 +383,12 @@ mod tests {
     fn non_terminal_prefix() {
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
         ];
         let word_seq = [ &words[0][0], &words[2][0], &words[1][0] ];
-        QueryPhrase::new(&word_seq[..]);
+        QueryPhrase::new(&word_seq[..]).unwrap();
     }
 
 }

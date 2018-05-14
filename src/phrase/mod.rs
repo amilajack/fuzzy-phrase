@@ -268,7 +268,7 @@ impl<W: io::Write> PhraseSetBuilder<W> {
     }
 
     /// Insert a phrase, specified as an array of word identifiers.
-    pub fn insert(&mut self, phrase: &[u64]) -> Result<(), fst::Error> {
+    pub fn insert(&mut self, phrase: &[u32]) -> Result<(), fst::Error> {
         let key = word_ids_to_key(phrase);
         self.0.insert(key)
     }
@@ -294,9 +294,9 @@ mod tests {
     #[test]
     fn insert_phrases_memory() {
         let mut build = PhraseSetBuilder::memory();
-        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
-        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
-        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
         let bytes = build.into_inner().unwrap();
 
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
@@ -333,9 +333,9 @@ mod tests {
         let wtr = io::BufWriter::new(File::create("/tmp/phrase-set.fst").unwrap());
 
         let mut build = PhraseSetBuilder::new(wtr).unwrap();
-        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
-        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
-        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
         build.finish().unwrap();
 
         let phrase_set = unsafe { PhraseSet::from_path("/tmp/phrase-set.fst") }.unwrap();
@@ -370,60 +370,60 @@ mod tests {
     #[test]
     fn contains_query() {
         let mut build = PhraseSetBuilder::memory();
-        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
-        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
-        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
         let bytes = build.into_inner().unwrap();
 
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
         ];
 
         let matching_word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let matching_phrase = QueryPhrase::new(&matching_word_seq);
+        let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
         assert_eq!(true, phrase_set.contains(matching_phrase).unwrap());
 
         let missing_word_seq = [ &words[0][0], &words[1][0] ];
-        let missing_phrase = QueryPhrase::new(&missing_word_seq);
+        let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
         assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
 
-        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) };
+        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
         let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
-        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
         assert!(phrase_set.contains(has_prefix_phrase).is_err());
     }
 
     #[test]
     fn contains_prefix_query() {
         let mut build = PhraseSetBuilder::memory();
-        build.insert(&[1u64, 61_528_u64, 561_528u64]).unwrap();
-        build.insert(&[61_528_u64, 561_528u64, 1u64]).unwrap();
-        build.insert(&[561_528u64, 1u64, 61_528_u64]).unwrap();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
         let bytes = build.into_inner().unwrap();
 
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
         let words = vec![
-            vec![ QueryWord::Full{ string: String::from("100"), id: 1u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("main"), id: 61_528u64, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ string: String::from("st"), id: 561_528u64, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
         ];
 
         let matching_word_seq = [ &words[0][0], &words[1][0] ];
-        let matching_phrase = QueryPhrase::new(&matching_word_seq);
+        let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
         assert_eq!(true, phrase_set.contains_prefix(matching_phrase).unwrap());
 
         let missing_word_seq = [ &words[0][0], &words[2][0] ];
-        let missing_phrase = QueryPhrase::new(&missing_word_seq);
+        let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
         assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
 
-        let prefix = QueryWord::Prefix{ string: String::from("st"), id_range: (561_528u64, 561_531u64) };
+        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
         let has_prefix_word_seq = [ &words[0][0], &words[1][0], &prefix ];
-        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq);
+        let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
         assert!(phrase_set.contains_prefix(has_prefix_phrase).is_err());
     }
 
