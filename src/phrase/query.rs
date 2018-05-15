@@ -46,21 +46,21 @@ impl QueryWord
 /// make sure that the sequence of words used to make the phrase does not go out of scope.
 pub struct QueryPhrase<'a> {
     pub length: usize,
-    pub words: &'a[&'a QueryWord],
+    pub words: &'a[QueryWord],
     pub has_prefix: bool,
 }
 
 impl<'a> QueryPhrase<'a> {
-    pub fn new(words: &'a[&'a QueryWord]) -> Result<QueryPhrase<'a>, util::PhraseSetError> {
-        let length: usize = words.len();
-        let has_prefix: bool = match words[length - 1] {
-            &QueryWord::Full {..} => false,
-            &QueryWord::Prefix {..} => true,
+    pub fn new<T: AsRef<[QueryWord]>+'a>(words: T) -> Result<QueryPhrase<'a>, util::PhraseSetError> {
+        let length: usize = words.as_ref().len();
+        let has_prefix: bool = match words.as_ref()[length - 1] {
+            QueryWord::Full {..} => false,
+            QueryWord::Prefix {..} => true,
         };
         // disallow prefixes in any position except the final position
         for i in 0..length-1 {
-            match words[i] {
-                &QueryWord::Prefix {..} => {
+            match words.as_ref()[i] {
+                QueryWord::Prefix {..} => {
                     return Err(util::PhraseSetError::new(
                             "QueryPhrase may only have QueryWord::Prefix in final position."));
                 },
@@ -68,7 +68,7 @@ impl<'a> QueryPhrase<'a> {
             }
         }
 
-        Ok(QueryPhrase { words, length, has_prefix })
+        Ok(QueryPhrase { words: words.as_ref(), length, has_prefix })
     }
 
     /// Return the length of the phrase (number of words)
@@ -81,7 +81,7 @@ impl<'a> QueryPhrase<'a> {
         let mut total_edit_distance = 0;
         for word in self.words {
             match word {
-                &&QueryWord::Full{ ref edit_distance, .. } => {
+                QueryWord::Full{ ref edit_distance, .. } => {
                     total_edit_distance += *edit_distance;
                 },
                 _ => (),
@@ -95,7 +95,7 @@ impl<'a> QueryPhrase<'a> {
         let mut word_ids: Vec<u32> = vec![];
         for word in self.words {
             match word {
-                &&QueryWord::Full{ ref id, .. } => {
+                QueryWord::Full{ ref id, .. } => {
                     word_ids.push(*id);
                 },
                 _ => (),
@@ -107,7 +107,7 @@ impl<'a> QueryPhrase<'a> {
     /// Generate a key from the prefix range
     pub fn prefix_key_range(&self) -> Option<(Vec<u8>, Vec<u8>)> {
         let prefix_range = match self.words[self.length - 1] {
-            &QueryWord::Prefix{ ref id_range, .. } => {
+            QueryWord::Prefix{ ref id_range, .. } => {
                 *id_range
             },
             _ => return None,
