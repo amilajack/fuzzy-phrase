@@ -27,10 +27,12 @@ pub fn build_phrase_graph(file_loc: &str) -> (HashMap<String, u32>, Vec<Vec<u32>
            word_ids.push(*word_id);
            autoinc += 1;
        }
-       phrases.sort();
+       phrases.push(word_ids);
     }
 
-    for phrase in phrases {
+    phrases.sort();
+
+    for phrase in phrases.iter() {
         build.insert(&phrase).unwrap();
     }
 
@@ -58,35 +60,47 @@ pub fn benchmark(c: &mut Criterion) {
 
     // make a vector I'm going to fill with closures to bench-test
     let mut to_bench = Vec::new();
+
     // each closure gets its own copy of the prebuilt data, but the "copy" is cheap since it's an
     // RC -- this is just a new reference and an increment to the count
     //
     // the copy will the get moved into the closure, but the original will stick around to be
     // copied for the next one
     let data = shared_data.clone();
+
     to_bench.push(Fun::new("exact_contains", move |b: &mut Bencher, _i| {
-        // we're benching on a list of words, but criterion needs to run for as long as it wants
+        // we're benching on a list of phrases, but criterion needs to run for as long as it wants
         // to get a statistically significant sample, potentially for more iterations than we have
         // words, so we'll build all the benches around cycle iterators that go forever
         let mut cycle = data.phrases.iter().cycle();
+
         // the closure based to b.iter is the thing that will actually be timed; everything before
         // that is untimed per-benchmark setup
-        let next_query = || -> QueryPhrase {
-            let word_ids = cycle.next().unwrap().as_slice();
-            let query_words = word_ids.iter()
+        b.iter(|| {
+            let query_ids = cycle.next().unwrap();
+            let query_words = query_ids.iter()
                 .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
                 .collect::<Vec<QueryWord>>();
-            let mut sequence = vec![];
-            for qw in query_words.iter() {
-                sequence.push(qw);
-            }
-            let query_phrase = QueryPhrase::new(&sequence[..]).unwrap();
+            let query_phrase = QueryPhrase::new(&query_words).unwrap();
             data.phrase_set.contains(query_phrase);
-        };
+        });
+    }));
 
-        b.iter(|| data.phrase_set.contains(get_next_query()));
+    // data is shadowed here for ease of copying and pasting, but this is a new clone
+    // (again, same data, new reference, because it's an Rc)
+    let data = shared_data.clone();
+    to_bench.push(Fun::new("exact_contains_prefix", move |b: &mut Bencher, _i| {
+        let mut cycle = data.phrases.iter().cycle();
+        b.iter(|| {
+            let query_ids = cycle.next().unwrap();
+            let query_words = query_ids.iter()
+                .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+                .collect::<Vec<QueryWord>>();
+            let query_phrase = QueryPhrase::new(&query_words).unwrap();
+            data.phrase_set.contains_prefix(query_phrase);
+        });
     }));
 
     // run the accumulated list of benchmarks
-    c.bench_functions("prefix", to_bench, ());
+    c.bench_functions("phrase", to_bench, ());
 }
