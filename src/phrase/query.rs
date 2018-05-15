@@ -51,7 +51,8 @@ pub struct QueryPhrase<'a> {
 }
 
 impl<'a> QueryPhrase<'a> {
-    pub fn new<T: AsRef<[QueryWord]>+'a>(words: T) -> Result<QueryPhrase<'a>, util::PhraseSetError> {
+
+    pub fn new<T: AsRef<[QueryWord]>+'a> (words: &'a T) -> Result<QueryPhrase<'a>, util::PhraseSetError> {
         let length: usize = words.as_ref().len();
         let has_prefix: bool = match words.as_ref()[length - 1] {
             QueryWord::Full {..} => false,
