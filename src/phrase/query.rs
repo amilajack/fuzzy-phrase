@@ -179,9 +179,9 @@ mod tests {
             vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
         ];
 
-        let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
+        let word_seq = vec![ words[0][0].clone(), words[1][0].clone(), words[2][0].clone() ];
 
-        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
         assert_eq!(3, phrase.len());
         assert_eq!(false, phrase.has_prefix);
         assert_eq!(
@@ -193,11 +193,13 @@ mod tests {
             phrase.full_word_key()
         );
 
-        let shingle_one = QueryPhrase::new(&word_seq[0..2]).unwrap();
-        assert_eq!(2, shingle_one.len());
+        let shingle_one = &word_seq[0..2];
+        let shingle_one_query = QueryPhrase::new(&shingle_one).unwrap();
+        assert_eq!(2, shingle_one_query.len());
 
-        let shingle_two = QueryPhrase::new(&word_seq[1..3]).unwrap();
-        assert_eq!(2, shingle_two.len());
+        let shingle_two = &word_seq[1..3];
+        let shingle_two_query = QueryPhrase::new(&shingle_two).unwrap();
+        assert_eq!(2, shingle_two_query.len());
 
     }
 
@@ -213,7 +215,7 @@ mod tests {
             ],
         ];
 
-        let word_seq_a = [ &words[0][0], &words[1][0], &words[2][0] ];
+        let word_seq_a = [ words[0][0].clone(), words[1][0].clone(), words[2][0].clone() ];
         let phrase_a = QueryPhrase::new(&word_seq_a).unwrap();
 
         assert_eq!(0, phrase_a.total_edit_distance());
@@ -243,7 +245,7 @@ mod tests {
         // should be 2 full words, 2 ids
         assert_eq!(vec![1u32, 61_528u32, 561_235u32], word_ids);
 
-        let word_seq_b = [ &words[0][0], &words[1][0], &words[2][1] ];
+        let word_seq_b = [ words[0][0].clone(), words[1][0].clone(), words[2][1].clone() ];
         let phrase_b = QueryPhrase::new(&word_seq_b).unwrap();
         assert_eq!(2, phrase_b.total_edit_distance());
         assert_eq!(false, phrase_b.has_prefix);
@@ -280,8 +282,8 @@ mod tests {
             vec![ QueryWord::Full{ id: 1u32, edit_distance: 1 } ],
             vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 2 } ],
         ];
-        let word_seq = [ &words[0][0], &words[1][0] ];
-        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
+        let word_seq = [ words[0][0].clone(), words[1][0].clone() ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
 
         assert_eq!(3, phrase.total_edit_distance());
         assert_eq!(false, phrase.has_prefix);
@@ -326,8 +328,8 @@ mod tests {
             vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
             vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
         ];
-        let word_seq = [ &words[0][0], &words[1][0], &words[2][0] ];
-        let phrase = QueryPhrase::new(&word_seq[..]).unwrap();
+        let word_seq = [ words[0][0].clone(), words[1][0].clone(), words[2][0].clone() ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
 
         assert_eq!(0, phrase.total_edit_distance());
         assert_eq!(true, phrase.has_prefix);
@@ -388,8 +390,8 @@ mod tests {
             vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
             vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
         ];
-        let word_seq = [ &words[0][0], &words[2][0], &words[1][0] ];
-        QueryPhrase::new(&word_seq[..]).unwrap();
+        let word_seq = [ words[0][0].clone(), words[2][0].clone(), words[1][0].clone() ];
+        QueryPhrase::new(&word_seq).unwrap();
     }
 
 }
