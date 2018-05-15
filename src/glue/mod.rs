@@ -8,14 +8,15 @@ use serde_json;
 
 use ::prefix::{PrefixSet, PrefixSetBuilder};
 use ::phrase::{PhraseSet, PhraseSetBuilder};
+use ::phrase::query::{QueryPhrase, QueryWord};
 
 #[derive(Default, Debug)]
 pub struct FuzzyPhraseSetBuilder {
-    phrases: Vec<Vec<u64>>,
+    phrases: Vec<Vec<u32>>,
     // use a btreemap for this one so we can read them out in order later
     // we'll only have one copy of each word, in the vector, so the inverse
     // map will map from a pointer to an int
-    words_to_tmpids: BTreeMap<String, u64>,
+    words_to_tmpids: BTreeMap<String, u32>,
     directory: PathBuf,
 }
 
@@ -47,13 +48,13 @@ impl FuzzyPhraseSetBuilder {
     }
 
     pub fn insert(&mut self, phrase: &[&str]) -> Result<(), Box<Error>> {
-        let mut tmpid_phrase: Vec<u64> = Vec::with_capacity(phrase.len());
+        let mut tmpid_phrase: Vec<u32> = Vec::with_capacity(phrase.len());
         for word in phrase {
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
             // but absent https://github.com/rust-lang/rfcs/pull/1769 , avoiding it requires a huge amount of hoop-jumping
             let string_word = word.to_string();
             let current_len = self.words_to_tmpids.len();
-            let word_id = self.words_to_tmpids.entry(string_word).or_insert(current_len as u64);
+            let word_id = self.words_to_tmpids.entry(string_word).or_insert(current_len as u32);
             tmpid_phrase.push(word_id.to_owned());
         }
         self.phrases.push(tmpid_phrase);
@@ -64,7 +65,7 @@ impl FuzzyPhraseSetBuilder {
         // we can go from name -> tmpid
         // we need to go from tmpid -> id
         // so build a mapping that does that
-        let mut tmpids_to_ids: Vec<u64> = vec![0; self.words_to_tmpids.len()];
+        let mut tmpids_to_ids: Vec<u32> = vec![0; self.words_to_tmpids.len()];
 
         let prefix_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("prefix.fst")))?);
         let mut prefix_set_builder = PrefixSetBuilder::new(prefix_writer)?;
@@ -78,7 +79,7 @@ impl FuzzyPhraseSetBuilder {
         for (id, (word, tmpid)) in self.words_to_tmpids.iter().enumerate() {
             prefix_set_builder.insert(word)?;
 
-            tmpids_to_ids[*tmpid as usize] = id as u64;
+            tmpids_to_ids[*tmpid as usize] = id as u32;
 
             // TODO: insert into fuzzy map
         }
@@ -145,34 +146,32 @@ impl FuzzyPhraseSet {
         Ok(FuzzyPhraseSet { prefix_set, phrase_set })
     }
 
-    pub fn contains(&self, phrase: &Vec<&str>) -> bool {
-        let mut id_phrase: Vec<u64> = vec![0; phrase.len()];
-        for (idx, word) in phrase.iter().enumerate() {
+    pub fn contains(&self, phrase: &Vec<&str>) -> Result<bool, Box<Error>> {
+        let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
+        for word in phrase {
             match self.prefix_set.get(&word) {
-                Some(word_id) => { id_phrase[idx] = word_id },
-                None => { return false }
+                Some(word_id) => { id_phrase.push(QueryWord::Full { id: word_id as u32, edit_distance: 0 }) },
+                None => { return Ok(false) }
             }
         }
-        self.phrase_set.contains(&id_phrase)
+        Ok(self.phrase_set.contains(QueryPhrase::new(&id_phrase)?)?)
     }
 
-    pub fn contains_prefix(&self, phrase: &[&str]) -> bool {
-        let mut id_phrase: Vec<u64> = vec![0; phrase.len()];
+    pub fn contains_prefix(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
+        let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         if phrase.len() > 0 {
             let last_idx = phrase.len() - 1;
-            for (idx, word) in phrase[..last_idx].iter().enumerate() {
+            for word in phrase[..last_idx].iter() {
                 match self.prefix_set.get(&word) {
-                    Some(word_id) => { id_phrase[idx] = word_id },
-                    None => { return false }
+                    Some(word_id) => { id_phrase.push(QueryWord::Full { id: word_id as u32, edit_distance: 0 }) },
+                    None => { return Ok(false) }
                 }
             }
             match self.prefix_set.get_prefix_range(&phrase[last_idx]) {
-                // TODO: do something to actually make a range
-                Some((word_id_start, _word_id_end)) => { id_phrase[last_idx] = word_id_start.value() },
-                None => { return false }
+                Some((word_id_start, word_id_end)) => { id_phrase.push(QueryWord::Prefix { id_range: (word_id_start.value() as u32, word_id_end.value() as u32) }) },
+                None => { return Ok(false) }
             }
         }
-        // TODO: call contains_prefix
-        self.phrase_set.contains(&id_phrase)
+        Ok(self.phrase_set.contains_prefix(QueryPhrase::new(&id_phrase)?)?)
     }
 }
