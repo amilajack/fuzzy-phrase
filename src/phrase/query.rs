@@ -174,14 +174,12 @@ mod tests {
     #[test]
     fn phrase_from_words() {
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
+            QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+            QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
         ];
 
-        let word_seq = vec![ words[0][0], words[1][0], words[2][0] ];
-
-        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        let phrase = QueryPhrase::new(&words).unwrap();
         assert_eq!(3, phrase.len());
         assert_eq!(false, phrase.has_prefix);
         assert_eq!(
@@ -193,11 +191,11 @@ mod tests {
             phrase.full_word_key()
         );
 
-        let shingle_one = &word_seq[0..2];
+        let shingle_one = &words[0..2];
         let shingle_one_query = QueryPhrase::new(&shingle_one).unwrap();
         assert_eq!(2, shingle_one_query.len());
 
-        let shingle_two = &word_seq[1..3];
+        let shingle_two = &words[1..3];
         let shingle_two_query = QueryPhrase::new(&shingle_two).unwrap();
         assert_eq!(2, shingle_two_query.len());
 
@@ -279,11 +277,10 @@ mod tests {
     fn two_fuzzy_matches() {
 
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 1 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 2 } ],
+            QueryWord::Full{ id: 1u32, edit_distance: 1 },
+            QueryWord::Full{ id: 61_528u32, edit_distance: 2 },
         ];
-        let word_seq = [ words[0][0], words[1][0] ];
-        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        let phrase = QueryPhrase::new(&words).unwrap();
 
         assert_eq!(3, phrase.total_edit_distance());
         assert_eq!(false, phrase.has_prefix);
@@ -324,12 +321,11 @@ mod tests {
     fn two_exact_matches_one_prefix() {
 
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
-            vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
+            QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+            QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) },
         ];
-        let word_seq = [ words[0][0], words[1][0], words[2][0] ];
-        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        let phrase = QueryPhrase::new(&words).unwrap();
 
         assert_eq!(0, phrase.total_edit_distance());
         assert_eq!(true, phrase.has_prefix);
@@ -386,11 +382,11 @@ mod tests {
     fn non_terminal_prefix() {
 
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
-            vec![ QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) } ],
+            QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+            QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) },
         ];
-        let word_seq = [ words[0][0], words[2][0], words[1][0] ];
+        let word_seq = [ words[0], words[2], words[1] ];
         QueryPhrase::new(&word_seq).unwrap();
     }
 

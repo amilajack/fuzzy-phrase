@@ -217,21 +217,21 @@ mod tests {
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
+            QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+            QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
         ];
 
-        let matching_word_seq = [ words[0][0], words[1][0], words[2][0] ];
+        let matching_word_seq = [ words[0], words[1], words[2] ];
         let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
         assert_eq!(true, phrase_set.contains(matching_phrase).unwrap());
 
-        let missing_word_seq = [ words[0][0], words[1][0] ];
+        let missing_word_seq = [ words[0], words[1] ];
         let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
         assert_eq!(false, phrase_set.contains(missing_phrase).unwrap());
 
         let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
-        let has_prefix_word_seq = [ words[0][0], words[1][0], prefix ];
+        let has_prefix_word_seq = [ words[0], words[1], prefix ];
         let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
         assert!(phrase_set.contains(has_prefix_phrase).is_err());
     }
@@ -247,21 +247,21 @@ mod tests {
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 561_528u32, edit_distance: 0 } ],
+            QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+            QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
         ];
 
-        let matching_word_seq = [ words[0][0], words[1][0] ];
+        let matching_word_seq = [ words[0], words[1] ];
         let matching_phrase = QueryPhrase::new(&matching_word_seq).unwrap();
         assert_eq!(true, phrase_set.contains_prefix(matching_phrase).unwrap());
 
-        let missing_word_seq = [ words[0][0], words[2][0] ];
+        let missing_word_seq = [ words[0], words[2] ];
         let missing_phrase = QueryPhrase::new(&missing_word_seq).unwrap();
         assert_eq!(false, phrase_set.contains_prefix(missing_phrase).unwrap());
 
         let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
-        let has_prefix_word_seq = [ words[0][0], words[1][0], prefix ];
+        let has_prefix_word_seq = [ words[0], words[1], prefix ];
         let has_prefix_phrase = QueryPhrase::new(&has_prefix_word_seq).unwrap();
         assert!(phrase_set.contains_prefix(has_prefix_phrase).is_err());
     }
