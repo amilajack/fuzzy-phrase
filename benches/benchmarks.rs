@@ -8,6 +8,8 @@ extern crate itertools;
 use criterion::Criterion;
 
 mod prefix;
+mod phrase;
 
-criterion_group!(benches, prefix::benchmark);
+// criterion_group!(benches, prefix::benchmark);
+criterion_group!(benches, phrase::benchmark);
 criterion_main!(benches);
