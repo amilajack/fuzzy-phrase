@@ -81,6 +81,7 @@ impl PhraseSet {
         let fst = &self.0.as_fst();
         // start from root node
         let root_node = fst.root();
+        println!("root is {:?}", root_node );
 
 		// using the keys for the full words, walk the graph. if no path accepts these keys, stop
         // here. result node should not be final.
@@ -153,7 +154,7 @@ impl PhraseSet {
                 for t in min_bound_node.transitions().filter(|t| t.inp >= prefix_min_key[i]) {
                     // in the first iteration, the min and max bounds are the same, so we
                     // need to avoid transitions that are above the max bound
-                    if (i > 0) || t.inp <= prefix_max_key[i] {
+                    if (i > 0) || t.inp < prefix_max_key[i] {
                         above_min.push(t.addr);
                     }
                 }
@@ -161,13 +162,19 @@ impl PhraseSet {
                 // for the next iteration, try to walk to the next node on the min key's path
                 if above_min.len() > 0 {
                     min_bound = match min_bound_node.find_input(prefix_min_key[i]) {
-                        None => above_min[0],
+                        // if the next byte is an acceptable input, follow that transition
                         Some(a) => min_bound_node.transition_addr(a),
+                        // if the next byte isn't an acceptable input, pick the lowest transition
+                        // above that byte
+                        None => above_min[0],
                     };
-                    if min_bound == 0 {
-                        return true
-                    }
                 } else {
+                    // handle the special case where the in bound path takes us to the final state
+                    // (which is always addr 0)
+                    // match min_bound_node.transitions().last() {
+                    //     Some(a) => { if a.addr == 0 { return true } },
+                    //     None => (),
+                    // }
                     follow_min = false;
                 }
             }
@@ -182,7 +189,7 @@ impl PhraseSet {
                 for t in max_bound_node.transitions().filter(|t| t.inp <= prefix_max_key[i]) {
                     // in the first iteration, the min and max bounds are the same, so we
                     // need to avoid transitions that are below the min bound
-                    if (i > 0) || t.inp >= prefix_min_key[i] {
+                    if (i > 0) || t.inp > prefix_min_key[i] {
                         below_max.push(t.addr);
                     }
                 }
@@ -194,22 +201,19 @@ impl PhraseSet {
                         Some(a) => max_bound_node.transition_addr(a),
                     };
                     println!("end of i:{}, max_bound is {}", i, max_bound);
-                    if max_bound == 0 {
-                        return true
-                    }
                 } else {
                     follow_max = false;
                 }
             }
 
-            if above_min.len() == 0 && below_max.len() == 0 {
-                return false
-            } else {
-                println!("iter {} above: {:?} below {:?}", i, above_min, below_max);
-            }
+            println!("iter {} above: {:?} below {:?}", i, above_min, below_max)
         }
 
-        return true
+        if follow_max || follow_min {
+            return true
+        } else {
+            return false
+        }
     }
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
@@ -459,29 +463,41 @@ mod tests {
         let phrase = QueryPhrase::new(&word_seq).unwrap();
         assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
 
-        // // high side of range overlaps
-        // let matching_prefix_hi = QueryWord::Prefix{ id_range: (561_520u32, 561_526u32) };
-        // let word_seq = [ words[0], words[1], matching_prefix_hi ];
-        // let phrase = QueryPhrase::new(&word_seq).unwrap();
-        // assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
+        // high side of range overlaps
+        let matching_prefix_hi = QueryWord::Prefix{ id_range: (
+                three_byte_decode(&[0u8, 0u8, 0u8]),
+                three_byte_decode(&[2u8, 2u8, 1u8]),
+                ) };
+        let word_seq = [ words[0], words[1], matching_prefix_hi ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
 
-        // // low side of range overlaps
-        // let matching_prefix_low = QueryWord::Prefix{ id_range: (561_530u32, 561_545u32) };
-        // let word_seq = [ words[0], words[1], matching_prefix_low ];
-        // let phrase = QueryPhrase::new(&word_seq).unwrap();
-        // assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
+        // low side of range overlaps
+        let matching_prefix_low = QueryWord::Prefix{ id_range: (
+                three_byte_decode(&[6u8, 4u8, 1u8]),
+                three_byte_decode(&[255u8, 255u8, 255u8]),
+                ) };
+        let word_seq = [ words[0], words[1], matching_prefix_low ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
 
-        // // no overlap, too low
-        // let missing_prefix_low = QueryWord::Prefix{ id_range: (561_520u32, 561_524u32) };
-        // let word_seq = [ words[0], words[1], missing_prefix_low ];
-        // let phrase = QueryPhrase::new(&word_seq).unwrap();
-        // assert_eq!(false, phrase_set.contains_prefix(phrase).unwrap());
+        // no overlap, too low
+        let missing_prefix_low = QueryWord::Prefix{ id_range: (
+                three_byte_decode(&[0u8, 0u8, 0u8]),
+                three_byte_decode(&[2u8, 0u8, 255u8]),
+                ) };
+        let word_seq = [ words[0], words[1], missing_prefix_low ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        assert_eq!(false, phrase_set.contains_prefix(phrase).unwrap());
 
-        // // no overlap, too high
-        // let missing_prefix_hi = QueryWord::Prefix{ id_range: (561_532u32, 561_545u32) };
-        // let word_seq = [ words[0], words[1], missing_prefix_hi ];
-        // let phrase = QueryPhrase::new(&word_seq).unwrap();
-        // assert_eq!(false, phrase_set.contains_prefix(phrase).unwrap());
+        // no overlap, too high
+        let missing_prefix_hi = QueryWord::Prefix{ id_range: (
+                three_byte_decode(&[6u8, 5u8, 9u8]),
+                three_byte_decode(&[255u8, 255u8, 255u8]),
+                ) };
+        let word_seq = [ words[0], words[1], missing_prefix_hi ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        assert_eq!(false, phrase_set.contains_prefix(phrase).unwrap());
 
     }
 
