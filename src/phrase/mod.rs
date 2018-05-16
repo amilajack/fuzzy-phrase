@@ -101,28 +101,36 @@ impl PhraseSet {
                 }
             }
         };
-
-        // TODO: if fwnode.transitions.min > prefix_max[0], fail  <15-05-18, yourname> //
-
-        // TODO: if fwnode.transitions.max < prefix_min[0], fail  <15-05-18, yourname> //
-
         // does the key at the low end of the prefix range take us to a final state? if so, we know
         // that at least one of the possible phrases is in the graph
         match self.partial_search(full_word_addr, &prefix_min_key) {
-            Some(..) => {
-                return true
-            },
+            Some(..) => { return true },
             _ => (),
         }
 
         // does the key at the high end of the prefix range take us to a final state? if so, we know
         // that at least one of the possible phrases is in the graph
         match self.partial_search(full_word_addr, &prefix_max_key) {
-            Some(..) => {
-                return true
-            },
+            Some(..) => { return true },
             _ => (),
         }
+
+        // get actual_min
+        // if actual_min > sought_max: false
+        //     // these two can be collapsed, assuming we're here:
+        //     | if (actual_min > sought_min) && (actual_max > sought_max): true
+        //     | if (actual_min > sought_min) && (actual_max < sought_max): true
+        //     --> else if (actual_min > sought_min): true
+        //
+        // get actual_max
+        // if actual_max < sought_min: false
+        //    else if actual_max < sought_max: true
+        // debug_assert((actual_min < sought_min) && (actual_max > sought_max)): look more closely
+        //    - we know that the sought range is within the actual one
+        //    - we know that the bounds of the sought range are not in the graph
+        //    - we need to make sure that there's at least one path in the graph that's within the
+        //    sought range
+
 
 		// if we're still not sure, we need to traverse the subtree bounded by the prefix range.
         // Each iteration of the loop works like this:
