@@ -61,6 +61,14 @@ impl FuzzyPhraseSetBuilder {
         Ok(())
     }
 
+    // convenience method that splits the input string on the space character
+    // IT DOES NOT DO PROPER TOKENIZATION; if you need that, use a real tokenizer and call
+    // insert directly
+    pub fn insert_str(&mut self, phrase: &str) -> Result<(), Box<Error>> {
+        let phrase_v: Vec<&str> = phrase.split(' ').collect();
+        self.insert(&phrase_v)
+    }
+
     pub fn finish(mut self) -> Result<(), Box<Error>> {
         // we can go from name -> tmpid
         // we need to go from tmpid -> id
@@ -146,7 +154,7 @@ impl FuzzyPhraseSet {
         Ok(FuzzyPhraseSet { prefix_set, phrase_set })
     }
 
-    pub fn contains(&self, phrase: &Vec<&str>) -> Result<bool, Box<Error>> {
+    pub fn contains(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         for word in phrase {
             match self.prefix_set.get(&word) {
@@ -155,6 +163,14 @@ impl FuzzyPhraseSet {
             }
         }
         Ok(self.phrase_set.contains(QueryPhrase::new(&id_phrase)?)?)
+    }
+
+    // convenience method that splits the input string on the space character
+    // IT DOES NOT DO PROPER TOKENIZATION; if you need that, use a real tokenizer and call
+    // insert directly
+    pub fn contains_str(&self, phrase: &str) -> Result<bool, Box<Error>> {
+        let phrase_v: Vec<&str> = phrase.split(' ').collect();
+        self.contains(&phrase_v)
     }
 
     pub fn contains_prefix(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
@@ -173,5 +189,37 @@ impl FuzzyPhraseSet {
             }
         }
         Ok(self.phrase_set.contains_prefix(QueryPhrase::new(&id_phrase)?)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate tempfile;
+
+    use super::*;
+
+    #[test]
+    fn glue_build() -> () {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
+        builder.insert_str("100 main street").unwrap();
+        builder.insert_str("200 main street").unwrap();
+        builder.insert_str("100 main ave").unwrap();
+        builder.insert_str("300 mlk blvd").unwrap();
+        builder.finish().unwrap();
+
+        let set = FuzzyPhraseSet::from_path(&dir.path()).unwrap();
+        assert!(set.contains_str("100 main street").unwrap());
+        assert!(set.contains_str("200 main street").unwrap());
+        assert!(set.contains_str("100 main ave").unwrap());
+        assert!(set.contains_str("300 mlk blvd").unwrap());
+
+        assert!(!set.contains_str("x").unwrap());
+        assert!(!set.contains_str("100 main").unwrap());
+        assert!(!set.contains_str("100 main s").unwrap());
+        assert!(!set.contains_str("100 main streetr").unwrap());
+        assert!(!set.contains_str("100 main street r").unwrap());
+        assert!(!set.contains_str("100 main street ave").unwrap());
     }
 }
