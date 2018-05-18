@@ -119,6 +119,17 @@ impl<'a> QueryPhrase<'a> {
         Some((prefix_start_key, prefix_end_key))
     }
 
+    /// Generate a key from the prefix range
+    pub fn prefix_id_range(&self) -> Option<(u32, u32)> {
+        let prefix_range = match self.words[self.length - 1] {
+            QueryWord::Prefix{ ref id_range, .. } => {
+                *id_range
+            },
+            _ => return None,
+        };
+        Some(prefix_range)
+    }
+
 }
 
 #[derive(Copy, Clone)]
@@ -343,6 +354,14 @@ mod tests {
                 vec![ 8u8, 145u8, 123u8],     // 561_531
             )),
             phrase.prefix_key_range()
+        );
+
+        assert_eq!(
+            Some((
+                561_528u32,
+                561_531u32
+            )),
+            phrase.prefix_id_range()
         );
 
         let mut word_count = 0;
