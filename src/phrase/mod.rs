@@ -7,7 +7,7 @@ use std::path::Path;
 
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder};
-use fst::raw::{CompiledAddr, Transition};
+use fst::raw::{CompiledAddr};
 
 use self::util::word_ids_to_key;
 use self::util::PhraseSetError;
@@ -75,7 +75,7 @@ impl PhraseSet {
 
     // TODO: this needs to get called inside contains_prefix when final word is QueryWord::prefix <15-05-18, boblannon> //
     fn contains_prefix_with_range(&self, phrase: QueryPhrase) -> bool {
-        let (prefix_min_key, prefix_max_key) = phrase.prefix_key_range().unwrap();
+        let (sought_min_key, sought_max_key) = phrase.prefix_key_range().unwrap();
 
 		// self as fst
         let fst = &self.0.as_fst();
@@ -97,130 +97,68 @@ impl PhraseSet {
                 if full_word_node.is_empty() {
                     return false
                 } else {
-                    addr
+                    full_word_node.addr()
                 }
             }
         };
         // does the key at the low end of the prefix range take us to a final state? if so, we know
         // that at least one of the possible phrases is in the graph
-        match self.partial_search(full_word_addr, &prefix_min_key) {
+        match self.partial_search(full_word_addr, &sought_min_key) {
             Some(..) => { return true },
             _ => (),
         }
 
         // does the key at the high end of the prefix range take us to a final state? if so, we know
         // that at least one of the possible phrases is in the graph
-        match self.partial_search(full_word_addr, &prefix_max_key) {
+        match self.partial_search(full_word_addr, &sought_max_key) {
             Some(..) => { return true },
             _ => (),
         }
 
         // get actual_min
-        // if actual_min > sought_max: false
-        //     // these two can be collapsed, assuming we're here:
-        //     | if (actual_min > sought_min) && (actual_max > sought_max): true
-        //     | if (actual_min > sought_min) && (actual_max < sought_max): true
-        //     --> else if (actual_min > sought_min): true
-        //
-        // get actual_max
-        // if actual_max < sought_min: false
-        //    else if actual_max < sought_max: true
-        // debug_assert((actual_min < sought_min) && (actual_max > sought_max)): look more closely
-        //    - we know that the sought range is within the actual one
-        //    - we know that the bounds of the sought range are not in the graph
-        //    - we need to make sure that there's at least one path in the graph that's within the
-        //    sought range
-
-
-		// if we're still not sure, we need to traverse the subtree bounded by the prefix range.
-        // Each iteration of the loop works like this:
-        //   (1) try to walk to the next node in the path of the min and max keys
-        //   (2) collect all of the nodes pointed to by transitions above the min path and below
-        //   the max path
-        //   (3) look at all of the nodes collected in (2) and determine whether they have
-        //   children that are final states.
-        let mut min_bound = full_word_addr;
-        let mut max_bound = full_word_addr;
-        let mut follow_min = true;
-        let mut follow_max = true;
-        // going byte-by-byte in the prefix min/max keys (each of which is three bytes)
-        for i in 0..3 {
-            // each iteration, we'll have to capture and explore the transitions whose inputs are
-            // between the ith byte of the min key and the ith byte of the max key. there's
-            // going to be overlap here, particularly for i=0, so we use a set to avoid duplicate
-            // effort.
-            let mut above_min: Vec<CompiledAddr> = vec![];
-            let mut below_max: Vec<CompiledAddr> = vec![];
-
-            // if the previous iteration found a new node on the min key's path:
-            if follow_min {
-                println!("following min bound {}", min_bound);
-                // find the node
-                let min_bound_node = fst.node(min_bound);
-                // select all of the transitions whose input is greater than the min key's ith byte
-                println!("transitions from min: {:?}", min_bound_node.transitions().collect::<Vec<Transition>>());
-                for t in min_bound_node.transitions().filter(|t| t.inp >= prefix_min_key[i]) {
-                    // in the first iteration, the min and max bounds are the same, so we
-                    // need to avoid transitions that are above the max bound
-                    if (i > 0) || t.inp < prefix_max_key[i] {
-                        above_min.push(t.addr);
-                    }
-                }
-
-                // for the next iteration, try to walk to the next node on the min key's path
-                if above_min.len() > 0 {
-                    min_bound = match min_bound_node.find_input(prefix_min_key[i]) {
-                        // if the next byte is an acceptable input, follow that transition
-                        Some(a) => min_bound_node.transition_addr(a),
-                        // if the next byte isn't an acceptable input, pick the lowest transition
-                        // above that byte
-                        None => above_min[0],
-                    };
-                } else {
-                    // handle the special case where the in bound path takes us to the final state
-                    // (which is always addr 0)
-                    // match min_bound_node.transitions().last() {
-                    //     Some(a) => { if a.addr == 0 { return true } },
-                    //     None => (),
-                    // }
-                    follow_min = false;
-                }
-            }
-
-            // if the previous iteration found a new node on the max key's path:
-            if follow_max {
-                println!("following max bound {}", max_bound);
-                // find the node
-                let max_bound_node = fst.node(max_bound);
-                // select all of the transitions whose input is less than the max key's ith byte
-                println!("transitions from max: {:?}", max_bound_node.transitions().collect::<Vec<Transition>>());
-                for t in max_bound_node.transitions().filter(|t| t.inp <= prefix_max_key[i]) {
-                    // in the first iteration, the min and max bounds are the same, so we
-                    // need to avoid transitions that are below the min bound
-                    if (i > 0) || t.inp > prefix_min_key[i] {
-                        below_max.push(t.addr);
-                    }
-                }
-
-                // for the next iteration, try to walk to the next node on the max key's path
-                if below_max.len() > 0 {
-                    max_bound = match max_bound_node.find_input(prefix_max_key[i]) {
-                        None => below_max[below_max.len()-1],
-                        Some(a) => max_bound_node.transition_addr(a),
-                    };
-                    println!("end of i:{}, max_bound is {}", i, max_bound);
-                } else {
-                    follow_max = false;
-                }
-            }
-
-            println!("iter {} above: {:?} below {:?}", i, above_min, below_max)
+        let mut min_n = fst.node(full_word_addr);
+        let mut actual_min_key: Vec<u8> = Vec::new();
+        for _i in 0..3 {
+            let min_t = min_n.transitions().nth(0).unwrap();
+            actual_min_key.push(min_t.inp);
+            min_n = fst.node(min_t.addr);
         }
 
-        if follow_max || follow_min {
-            return true
-        } else {
+        debug_assert!(actual_min_key.len() == 3);
+
+        // if actual_min > sought_max: sought range is below actual range
+        if actual_min_key > sought_max_key {
             return false
+        }
+        // these two can be collapsed, assuming actual_min < sought_max:
+        //   - if (actual_min > sought_min) && (actual_max > sought_max): true
+        //   - if (actual_min > sought_min) && (actual_max < sought_max): true
+        // └─> else if (actual_min > sought_min): true
+        else if actual_min_key > sought_min_key {
+            return true
+        }
+
+        // get actual_max
+        let mut max_n = fst.node(full_word_addr);
+        let mut actual_max_key: Vec<u8> = Vec::new();
+        for _i in 0..3 {
+            let max_t = max_n.transitions().last().unwrap();
+            actual_max_key.push(max_t.inp);
+            max_n = fst.node(max_t.addr);
+        }
+
+        debug_assert!(actual_max_key.len() == 3);
+
+        // if actual_max < sought_min: sought range is above actual range
+        if actual_max_key < sought_min_key {
+            return false
+        }
+
+        // by now we know that the ranges intersect.
+        // if actual_max < sought_max: the intersection includes actual_max, so we know there's at
+        // least one match
+        if actual_max_key < sought_max_key {
+            return true
         }
     }
 
