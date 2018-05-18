@@ -160,6 +160,50 @@ impl PhraseSet {
         if actual_max_key < sought_max_key {
             return true
         }
+
+        // Now we know that the sought range is completely contained within the limits of the
+        // actual one. We're still not sure, though, if there is an actual path shared by both. A
+        // simple, non-graph example to demonstrate this point:
+        //
+        // ```
+        // let actual_values = [ 1, 2, 7, 8, 9 ]
+        // let actual_range = (actual_values.first(), actual_values.last())
+        // let sought_range = (3, 6)
+        // ```
+        //
+        // Here, `sought_range` is completely contained within `actual_range` (1,9)`), but that
+        // doesn't mean that there's actually a match.  we have to look at actual values and ask
+        // whether or not any of them really fall within the sought range. Since none do, we'd
+        // return false.
+        debug_assert!((actual_min_key < sought_min_key) && (actual_max_key > sought_max_key));
+
+        // The same is true here, so we need to look for any evidence that there's at least one
+        // valid path in the graph that is within our sought range. We need to traverse the subtree
+        // bounded by the prefix range, if it exists. We know that `sought_min_key` and
+        // `sought_max_key` aren't in the graph, but parts of them may be.
+        //
+        for i in 0..3 {
+            ();
+            // Each iteration `i` of this loop will first check to see if there is any transition `t`
+            // from the current node whose acceptance input (`t.inp`) is between `sought_min_key[i]`
+            // and `sought_max_key[i]`. If there is, we know for sure that there's at least one path
+            // within the sought range, so `return true`.
+            //
+            // If not, we try to travel forward in the graph by one byte along one or both of:
+            //   a. the transition `t` where `t.inp=sought_min_key[i]`
+            //   b. the transition `t` where `t.inp=sought_max_key[i]`
+            //
+            // If both of these are unavailable, there's definitely not a sought path within the actual
+            // range. Return false.
+            //
+            // If only (a) is available, continue to the next iteration, but from now on we'll look for
+            // any `t.inp > sought_min_key[i]`.
+            //
+            // Conversely: if only (b) is available, continue to the next iteration, but from now on
+            // we'll look for any `t.inp < sought_max_key[i]`.
+        }
+
+        return false
     }
 
     /// Create from a raw byte sequence, which must be written by `PhraseSetBuilder`.
