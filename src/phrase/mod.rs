@@ -100,19 +100,6 @@ impl PhraseSet {
                 }
             }
         };
-        // does the key at the low end of the prefix range take us to a final state? if so, we know
-        // that at least one of the possible phrases is in the graph
-        match self.partial_search(full_word_addr, &sought_min_key) {
-            Some(..) => { return true },
-            _ => (),
-        }
-
-        // does the key at the high end of the prefix range take us to a final state? if so, we know
-        // that at least one of the possible phrases is in the graph
-        match self.partial_search(full_word_addr, &sought_max_key) {
-            Some(..) => { return true },
-            _ => (),
-        }
 
         // get actual_min
         let mut min_n = fst.node(full_word_addr);
