@@ -82,8 +82,7 @@ impl PhraseSet {
         // start from root node
         let root_node = fst.root();
 
-		// using the keys for the full words, walk the graph. if no path accepts these keys, stop
-        // here. result node should not be final.
+		// using the keys for the full words, walk the graph. if no path accepts these keys, stop.
         let full_word_key = phrase.full_word_key();
         let full_word_addr = match self.partial_search(root_node.addr(), &full_word_key) {
             None => {
@@ -205,7 +204,11 @@ impl PhraseSet {
             },
             Look::Between(current_addr) => {
                 let current_node = fst.node(current_addr);
-                // filter for the transitions between min and max (inclusive)
+
+                // this handles the case where we're doing a between search, but the sought keys
+                // share a byte. in that case, if possible, we follow the transition matching that
+                // byte and do another between search starting at the node that that transition
+                // points to.
                 if min_byte == max_byte {
                     if let Some(t_i) = current_node.find_input(min_byte) {
                         let t = current_node.transition(t_i);
@@ -213,9 +216,13 @@ impl PhraseSet {
                         return next_looks
                     }
                 }
+
+                // filter for the transitions between min and max (inclusive)
                 let transition_iter = current_node.transitions()
                     .skip_while(|t| t.inp < min_byte)
                     .take_while(|t| t.inp <= max_byte);
+
+                // iterate over the filtered transitions
                 for t in transition_iter {
                     if (t.inp > min_byte) && (t.inp < max_byte) {
                         // if we see anything between min and max, then we found at least one path
@@ -233,13 +240,16 @@ impl PhraseSet {
                         next_looks.push(Look::Below(t.addr));
                     }
                 }
+                // if no transitions were found, we'll return an empty vector
             },
             Look::Above(current_addr) => {
                 let current_node = fst.node(current_addr);
+
+                // filter for transitions equal to or above the min_byte
                 let transition_iter = current_node.transitions()
                     .skip_while(|t| t.inp < min_byte);
 
-                // the first transition
+                // iterate over the filtered transitions
                 for t in transition_iter {
                     if t.inp > min_byte {
                         // if it is anything above the min, then we found at least one path within the
@@ -253,11 +263,17 @@ impl PhraseSet {
                         next_looks.push(Look::Above(t.addr));
                     }
                 }
+
+                // if no transitions were found, we'll return an empty vector
             },
             Look::Below(current_addr) => {
                 let current_node = fst.node(current_addr);
+
+                // filter for transitions equal to or below the max_byte
                 let transition_iter = current_node.transitions()
                     .take_while(|t| t.inp <= max_byte);
+
+                // iterate over the filtered transitions
                 for t in transition_iter {
                     if t.inp < max_byte {
                         // if it is anything below the max, then we found at least one path within the
@@ -271,6 +287,7 @@ impl PhraseSet {
                         next_looks.push(Look::Below(t.addr));
                     }
                 }
+                // if no transitions were found, we'll return an empty vector
             },
         }
         return next_looks
