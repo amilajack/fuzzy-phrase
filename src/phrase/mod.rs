@@ -188,7 +188,7 @@ impl PhraseSet {
                 }
             }
 
-            looks = next_looks.drain(..).collect::<Vec<Look>>();
+            looks = next_looks.clone();
             i += 1
         }
         return false
@@ -288,7 +288,7 @@ impl PhraseSet {
 
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 enum Look {
     Above(CompiledAddr),
     Below(CompiledAddr),
