@@ -2,6 +2,7 @@ use std::io::{BufWriter};
 use std::fs::File;
 use std::error::Error;
 use itertools::Itertools;
+use std::collections::HashSet;
 use strsim::damerau_levenshtein;
 
 mod map;
@@ -24,7 +25,7 @@ impl Symspell {
 
     //builds the graph and writes to disk, additionally writes the ids to id_list which is a part of struct
     fn build<'a, T>(words: T, edit_distance: u64) -> Result<Vec<Vec<usize>>, Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
-        let word_variants = Symspell::create_variants(words, edit_distance);
+        let word_variants = create_variants(words, edit_distance);
         let wtr = BufWriter::new(File::create("x_sym.fst")?);
         let mut build = FuzzyMapBuilder::new(wtr)?;
         let mut multids = Vec::<Vec<usize>>::new();
@@ -42,32 +43,11 @@ impl Symspell {
         build.finish()?;
         Ok(multi_idx.id_list)
     }
-    //creates delete variants for every word in the list
-    //using usize for - https://stackoverflow.com/questions/29592256/whats-the-difference-between-usize-and-u32?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-    fn create_variants<'a, T>(words: T, edit_distance: u64) -> Vec<(String, usize)> where T: IntoIterator<Item=&'a &'a str> {
-        let mut word_variants = Vec::<(String, usize)>::new();
-        //treating &words as a slice, since, slices are read-only objects
-        for (i, &word) in words.into_iter().enumerate() {
-
-            word_variants.push((word.to_owned(), i));
-            for k in 1..edit_distance + 1 {
-                for (j, _) in word.char_indices() {
-                    let mut s = String::with_capacity(word.len() - 1);
-                    let parts = word.split_at(j);
-                    s.push_str(parts.0);
-                    s.extend(parts.1.chars().skip(k as usize));
-                    word_variants.push((s, i));
-                }
-            }
-        }
-        word_variants.sort();
-        word_variants.dedup();
-        word_variants
-    }
 
     //Defining lifetimes here because we are expecting the string to last the lifetime of the closure F
     fn lookup<'a, F>(query: &str, edit_distance: u64, ids: &Vec<Vec<usize>>, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
-
+        let mut e_flag: u64 = 1;
+        if edit_distance == 1 { e_flag = 2; }
         let levenshtein_limit : usize;
         let mut query_variants = Vec::new();
         let mut matches = Vec::<usize>::new();
@@ -77,16 +57,11 @@ impl Symspell {
 
         //create variants of the query itself
         query_variants.push(query.to_owned());
-        for k in 1..edit_distance + 1 {
-            for (j, _) in query.char_indices() {
-                let mut variant = String::with_capacity(query.len() - 1);
-                let parts = query.split_at(j);
-                variant.push_str(parts.0);
-                variant.extend(parts.1.chars().skip(k as usize));
-                query_variants.push(variant);
-            }
+        let mut variants: HashSet<String> = HashSet::new();
+        let all_query_variants = edits(&query, e_flag, 2, &mut variants);
+        for j in all_query_variants.iter() {
+            query_variants.push(j.to_owned());
         }
-        query_variants.sort();
         query_variants.dedup();
 
         for i in query_variants {
@@ -123,6 +98,46 @@ impl Symspell {
     }
 }
 
+//creates delete variants for every word in the list
+//using usize for - https://stackoverflow.com/questions/29592256/whats-the-difference-between-usize-and-u32?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+fn create_variants<'a, T>(words: T, edit_distance: u64) -> Vec<(String, usize)> where T: IntoIterator<Item=&'a &'a str> {
+    let mut word_variants = Vec::<(String, usize)>::new();
+    let mut e_flag: u64 = 1;
+    if edit_distance == 1 { e_flag = 2; }
+
+    //treating &words as a slice, since, slices are read-only objects
+    for (i, &word) in words.into_iter().enumerate() {
+        word_variants.push((word.to_owned(), i));
+        let mut variants: HashSet<String> = HashSet::new();
+        let all_variants = edits(&word, e_flag, 2, &mut variants);
+        for j in all_variants.iter() {
+            word_variants.push((j.to_owned(), i));
+        }
+    }
+    word_variants.sort();
+    word_variants
+}
+
+fn edits<'a>(word: &str, edit_distance: u64, max_distance: u64, delete_variants: &'a mut HashSet<String>) -> &'a mut HashSet<String> {
+    let mut iter = word.char_indices().peekable();
+
+    while let Some((pos, _char)) = iter.next() {
+        let mut deleted_item = String::with_capacity(word.len());
+        deleted_item.push_str(&word[..pos]);
+
+        if let Some((next_pos, _)) = iter.peek() {
+            deleted_item.push_str(&word[*next_pos..]);
+        }
+
+        if edit_distance < max_distance {
+            edits(&deleted_item, edit_distance + 1, max_distance, delete_variants);
+        }
+
+        delete_variants.insert(deleted_item);
+    }
+    delete_variants
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,7 +156,7 @@ mod tests {
         let ids = Symspell::build(&words, 1);
         let unwrapped_ids = &ids.unwrap();
         //exact lookup, the original word in the data is - "albazan"
-        let query1 = "albazan";
+        let query1 = "alazan";
         let matches = Symspell::lookup(&query1, 1, unwrapped_ids, |id| &words[id]);
         assert_eq!(matches.unwrap(), ["albazan"]);
 
