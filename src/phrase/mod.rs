@@ -188,7 +188,7 @@ impl PhraseSet {
                 }
             }
 
-            looks = next_looks.clone();
+            looks = next_looks;
             i += 1
         }
         return false
@@ -288,7 +288,7 @@ impl PhraseSet {
 
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 enum Look {
     Above(CompiledAddr),
     Below(CompiledAddr),
