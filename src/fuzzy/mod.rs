@@ -18,6 +18,7 @@ pub struct Symspell {
     id_list: Vec<Vec<usize>>
 }
 
+
 impl Symspell {
     pub fn new(id_list: Vec<Vec<usize>>) -> Symspell {
         Symspell { id_list: id_list }
