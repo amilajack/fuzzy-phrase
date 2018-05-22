@@ -2,10 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::collections::HashMap;
 use std::rc::Rc;
-use itertools::Itertools;
 use criterion::{Criterion, Fun, Bencher};
-use reqwest;
-use fst::raw::Output;
 use fuzzy_phrase::{PhraseSet, PhraseSetBuilder};
 use fuzzy_phrase::phrase::query::{QueryWord, QueryPhrase};
 
@@ -14,7 +11,7 @@ pub fn build_phrase_graph(file_loc: &str) -> (HashMap<String, u32>, Vec<Vec<u32>
     let mut autoinc = 0;
     let mut word_to_id: HashMap<String, u32> = HashMap::new();
     let f = File::open(file_loc).expect("tried to open_file");
-    let mut file_buf = BufReader::new(&f);
+    let file_buf = BufReader::new(&f);
 
     let mut build = PhraseSetBuilder::memory();
 
@@ -82,7 +79,7 @@ pub fn benchmark(c: &mut Criterion) {
                 .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
                 .collect::<Vec<QueryWord>>();
             let query_phrase = QueryPhrase::new(&query_words).unwrap();
-            data.phrase_set.contains(query_phrase);
+            let result = data.phrase_set.contains(query_phrase).unwrap();
         });
     }));
 
@@ -97,7 +94,26 @@ pub fn benchmark(c: &mut Criterion) {
                 .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
                 .collect::<Vec<QueryWord>>();
             let query_phrase = QueryPhrase::new(&query_words).unwrap();
-            data.phrase_set.contains_prefix(query_phrase);
+            let result = data.phrase_set.contains_prefix(query_phrase).unwrap();
+        });
+    }));
+
+    // data is shadowed here for ease of copying and pasting, but this is a new clone
+    // (again, same data, new reference, because it's an Rc)
+    let data = shared_data.clone();
+    to_bench.push(Fun::new("range_contains_prefix", move |b: &mut Bencher, _i| {
+        let mut cycle = data.phrases.iter().cycle();
+        b.iter(|| {
+            let word_ids = cycle.next().unwrap();
+            let fullword_ids = &word_ids[..word_ids.len()];
+            let last_id = &word_ids[word_ids.len()-1];
+            let last_id_range = (last_id - 2, last_id + 2);
+            let mut query_words = fullword_ids.iter()
+                .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+                .collect::<Vec<QueryWord>>();
+            query_words.push(QueryWord::Prefix{ id_range: last_id_range});
+            let query_phrase = QueryPhrase::new(&query_words).unwrap();
+            let result = data.phrase_set.contains_prefix(query_phrase).unwrap();
         });
     }));
 
