@@ -36,5 +36,5 @@ jobs:
             bash <(curl https://raw.githubusercontent.com/xd009642/tarpaulin/master/travis-install.sh)
             cargo tarpaulin \
               --ciserver circle-ci \
-              --skip-clean --out Xml
+              --verbose --out Xml
             bash <(curl -s https://codecov.io/bash)
