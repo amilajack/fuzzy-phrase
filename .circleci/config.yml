@@ -27,12 +27,6 @@ jobs:
           paths:
             - "~/.cargo"
             - "./target"
-  coverage:
-    docker:
-      - image: circleci/rust:1.26
-    steps:
-      - restore_cache:
-          key: build-{{ .Branch }}-{{ checksum "Cargo.toml" }}
       - run:
           name: Coverage
           command: |
@@ -41,12 +35,3 @@ jobs:
               --ciserver circle-ci \
               --skip-clean --out Xml
             bash <(curl -s https://codecov.io/bash)
-
-workflows:
-  version: 2
-  build-and-test:
-    jobs:
-      - build
-      - coverage:
-          requires:
-            - build
