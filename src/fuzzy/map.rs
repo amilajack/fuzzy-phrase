@@ -1,12 +1,13 @@
 use fst::{IntoStreamer, Streamer, Automaton};
+use std;
 use std::collections::HashSet;
 use std::error::Error;
-use std::io::prelude::*;
+use itertools::Itertools;
 use fst::raw;
 use fst::Error as FstError;
 use fst::automaton::{AlwaysMatch};
 #[cfg(feature = "mmap")]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{BufWriter};
 use serde::{Serialize};
@@ -15,31 +16,23 @@ use strsim::damerau_levenshtein;
 
 static BIG_NUMBER: usize = 1 << 30;
 
-pub struct FuzzyMap(raw::Fst, Vec<Vec<usize>>);
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+struct MultiIdxList(Vec<Vec<usize>>);
+
+pub struct FuzzyMap(raw::Fst, MultiIdxList);
 
 impl FuzzyMap {
     pub fn new(fst: raw::Fst, id_list: Vec<Vec<usize>>) -> Result<Self, FstError> {
-        Ok(FuzzyMap(fst, id_list))
+        Ok(FuzzyMap(fst, MultiIdxList(id_list)))
     }
-    // these are lifted from upstream Set
+
     #[cfg(feature = "mmap")]
-    pub unsafe fn from_path<P: AsRef<Path>, P1: AsRef<Path>>(fstpath: P, vecpath: P1) -> Result<Self, FstError> {
-        let fst = raw::Fst::from_path(fstpath).unwrap();
+    pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
+        //this to 1 path
+        let fst = raw::Fst::from_path(path).unwrap();
+        //Deserialize it and store in id_list
         let id_list = Vec::<Vec<usize>>::new();
         FuzzyMap::new(fst, id_list)
-    }
-
-    pub fn from_bytes(fstbytes: Vec<u8>, vecbytes: Vec<Vec<usize>>) -> Result<Self, FstError> {
-        let fst = raw::Fst::from_bytes(fstbytes).unwrap();
-        let id_list = Vec::<Vec<usize>>::new();
-        FuzzyMap::new(fst, id_list)
-    }
-
-    pub fn from_iter<T, I>(iter: I) -> Result<Self, FstError>
-            where T: AsRef<[u8]>, I: IntoIterator<Item=(T, u64)> {
-        let mut builder = FuzzyMapBuilder::memory();
-        builder.extend_iter(iter)?;
-        FuzzyMap::from_bytes(builder.into_inner()?)
     }
 
     pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
@@ -74,8 +67,8 @@ impl FuzzyMap {
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<u64> {
         self.0.get(key).map(|output| output.value())
     }
-
-    pub fn lookup<'a, F>(query: &str, edit_distance: u64, ids: &Vec<Vec<usize>>, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
+    //get rid of ids
+    pub fn lookup<'a, F>(&self, query: &str, edit_distance: u64, ids: &Vec<Vec<usize>>, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
         let mut e_flag: u64 = 1;
         if edit_distance == 1 { e_flag = 2; }
         let levenshtein_limit : usize;
@@ -92,9 +85,9 @@ impl FuzzyMap {
         query_variants.dedup();
 
         for i in query_variants {
-            match fst.get(&i) {
+            match self.0.get(&i) {
                 Some (idx) => {
-                    let uidx = idx as usize;
+                    let uidx = idx.value() as usize;
                     if uidx < BIG_NUMBER {
                         matches.push(uidx);
                     } else {
@@ -125,35 +118,33 @@ impl FuzzyMap {
     }
 }
 
-#[derive(Serialize)]
+// #[derive(Debug, PartialEq, Deserialize, Serialize)]
+// struct MultiIdBuilder(Vec<Vec<usize>>);
 
-pub struct FuzzyMapBuilder<W> {
-    builder: raw::Builder<W>,
-    id_builder: Vec<Vec<usize>>
+pub struct FuzzyMapBuilder {
+    builder: raw::Builder<BufWriter<File>>,
+    id_builder: Vec<Vec<usize>>,
+    prefixFilePath: PathBuf
 }
 
-impl FuzzyMapBuilder<Vec<u8>> {
-    pub fn memory() -> Self {
-        FuzzyMapBuilder { builder: raw::Builder::memory(), id_builder: Vec::<Vec<usize>>::new() }
-    }
-}
-
-impl<W: Write> FuzzyMapBuilder<W> {
-    pub fn new(fst_wtr: W, id_wtr: W) -> Result<FuzzyMapBuilder<W>, FstError> {
-        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new()  })
+impl FuzzyMapBuilder {
+    //takes one path
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<FuzzyMapBuilder, FstError> where P: std::convert::AsRef<std::ffi::OsStr> {
+        let filePath = path.as_ref().to_owned();
+        let mut fst_wtr = BufWriter::new(File::create(Path::new(&path).join(".fst"))?);
+        let mut id_wtr = BufWriter::new(File::create(Path::new(&path).join(".msg"))?);
+        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), prefixFilePath: filePath })
     }
 
-    pub fn build<'a, T>(words: T, edit_distance: u64) -> Result<Vec<Vec<usize>>, Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
+    pub fn build<'a, T>(&mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
         let word_variants = super::create_variants(words, edit_distance);
-        let wtr = BufWriter::new(File::create("x_sym.fst")?);
-        let mut build = FuzzyMapBuilder::new(fst_wtr, id_wtr)?;
+        //precalculate the file path;
         for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
-            build.insert(key, opts)?;
+            self.insert(key, opts)?
         }
-        let multi_idx = self::new(id_builder.to_vec());
-        build.finish()?;
-        Ok(multi_idx.id_list)
+        self.finish()?;
+        Ok(())
     }
 
     pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: Vec<usize>) -> Result<(), FstError> {
@@ -167,26 +158,19 @@ impl<W: Write> FuzzyMapBuilder<W> {
         Ok(())
     }
 
-    pub fn extend_iter<T, I>(&mut self, iter: I) -> Result<(), FstError>
-            where T: AsRef<[u8]>, I: IntoIterator<Item=(T, u64)> {
-                for (k, v) in iter {
-                    self.builder.insert(k, v)?;
-                }
-                Ok(())
+    pub fn extend_iter<T, I>(&mut self, iter: I) -> Result<(), FstError> where T: AsRef<[u8]>, I: IntoIterator<Item=(T, u64)> {
+        for (k, v) in iter {
+            self.builder.insert(k, v)?;
+        }
+        Ok(())
     }
 
     pub fn finish(self) -> Result<(), FstError> {
+        //based on the path internally - use the constructor path
+        let filePath: FuzzyMapBuilder.path;
         let mut mf_wtr = BufWriter::new(File::create("midx.msg"));
-        self.id_builder.serialize(&mut Serializer::new(mf_wtr));
+        self.id_builder.serialize(&mut Serializer::new(mf_wtr)?);
         self.builder.finish()
-    }
-
-    pub fn into_inner(self) -> Result<W, FstError> {
-        self.builder.into_inner()
-    }
-
-    pub fn get_ref(&self) -> &W {
-        self.builder.get_ref()
     }
 
     pub fn bytes_written(&self) -> u64 {
