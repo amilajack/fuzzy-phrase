@@ -1,0 +1,29 @@
+version: 2
+
+machine:
+  services:
+    - docker
+
+jobs:
+  build:
+    docker:
+      - image: circleci/rust:1.26
+    steps:
+      - setup-docker-engine
+      - checkout
+      - restore_cache:
+          key: build-{{ .Branch }}-{{ checksum "Cargo.toml" }}
+      - run:
+          name: Build
+          command: |
+            rustc --version --verbose
+            cargo --version --verbose
+            cargo build
+      - run:
+          name: Test
+          command: cargo test -- --nocapture
+      - save_cache:
+          key: build-{{ .Branch }}-{{ checksum "Cargo.toml" }}
+          paths:
+            - "~/.cargo"
+            - "./target"
