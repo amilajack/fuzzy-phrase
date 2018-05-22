@@ -1,10 +1,19 @@
 use fst::{IntoStreamer, Streamer, Automaton};
+use std::collections::HashSet;
+use std::error::Error;
 use std::io::prelude::*;
 use fst::raw;
 use fst::Error as FstError;
 use fst::automaton::{AlwaysMatch};
 #[cfg(feature = "mmap")]
 use std::path::Path;
+use std::fs::File;
+use std::io::{BufWriter};
+use serde::{Serialize};
+use rmps::{Serializer};
+use strsim::damerau_levenshtein;
+
+static BIG_NUMBER: usize = 1 << 30;
 
 pub struct FuzzyMap(raw::Fst, Vec<Vec<usize>>);
 
@@ -65,7 +74,58 @@ impl FuzzyMap {
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<u64> {
         self.0.get(key).map(|output| output.value())
     }
+
+    pub fn lookup<'a, F>(query: &str, edit_distance: u64, ids: &Vec<Vec<usize>>, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
+        let mut e_flag: u64 = 1;
+        if edit_distance == 1 { e_flag = 2; }
+        let levenshtein_limit : usize;
+        let mut query_variants = Vec::new();
+        let mut matches = Vec::<usize>::new();
+
+        //create variants of the query itself
+        query_variants.push(query.to_owned());
+        let mut variants: HashSet<String> = HashSet::new();
+        let all_query_variants = super::edits(&query, e_flag, 2, &mut variants);
+        for j in all_query_variants.iter() {
+            query_variants.push(j.to_owned());
+        }
+        query_variants.dedup();
+
+        for i in query_variants {
+            match fst.get(&i) {
+                Some (idx) => {
+                    let uidx = idx as usize;
+                    if uidx < BIG_NUMBER {
+                        matches.push(uidx);
+                    } else {
+                       for x in &(ids)[uidx - BIG_NUMBER] {
+                            matches.push(*x);
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+        //return all ids that match
+        matches.sort();
+
+        //checks all words whose damerau levenshtein edit distance is lesser than 2
+        if edit_distance == 1 {
+            levenshtein_limit = 2;
+        } else { levenshtein_limit = 3; }
+
+
+        Ok(matches
+            .into_iter().dedup()
+            .map(lookup_fn)
+            .filter(|word| damerau_levenshtein(query, word) < levenshtein_limit as usize)
+            .map(|word| word.to_owned())
+            .collect::<Vec<String>>()
+        )
+    }
 }
+
+#[derive(Serialize)]
 
 pub struct FuzzyMapBuilder<W> {
     builder: raw::Builder<W>,
@@ -83,8 +143,27 @@ impl<W: Write> FuzzyMapBuilder<W> {
         Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new()  })
     }
 
-    pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: u64) -> Result<(), FstError> {
-        self.builder.insert(key, ids)?;
+    pub fn build<'a, T>(words: T, edit_distance: u64) -> Result<Vec<Vec<usize>>, Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
+        let word_variants = super::create_variants(words, edit_distance);
+        let wtr = BufWriter::new(File::create("x_sym.fst")?);
+        let mut build = FuzzyMapBuilder::new(fst_wtr, id_wtr)?;
+        for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
+            let opts = group.collect::<Vec<_>>();
+            build.insert(key, opts)?;
+        }
+        let multi_idx = self::new(id_builder.to_vec());
+        build.finish()?;
+        Ok(multi_idx.id_list)
+    }
+
+    pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: Vec<usize>) -> Result<(), FstError> {
+        let id = if ids.len() == 1 {
+            ids[0]
+        } else {
+            self.id_builder.push((&ids).iter().map(|t| 1).collect::<Vec<_>>());
+            self.id_builder.len() - 1 + BIG_NUMBER
+        };
+        self.builder.insert(key, id as u64)?;
         Ok(())
     }
 
@@ -97,6 +176,8 @@ impl<W: Write> FuzzyMapBuilder<W> {
     }
 
     pub fn finish(self) -> Result<(), FstError> {
+        let mut mf_wtr = BufWriter::new(File::create("midx.msg"));
+        self.id_builder.serialize(&mut Serializer::new(mf_wtr));
         self.builder.finish()
     }
 
