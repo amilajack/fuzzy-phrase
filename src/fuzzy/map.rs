@@ -6,17 +6,24 @@ use fst::automaton::{AlwaysMatch};
 #[cfg(feature = "mmap")]
 use std::path::Path;
 
-pub struct FuzzyMap(raw::Fst);
+pub struct FuzzyMap(raw::Fst, Vec<Vec<usize>>);
 
 impl FuzzyMap {
+    pub fn new(fst: raw::Fst, id_list: Vec<Vec<usize>>) -> Result<Self, FstError> {
+        Ok(FuzzyMap(fst, id_list))
+    }
     // these are lifted from upstream Set
     #[cfg(feature = "mmap")]
-    pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
-        raw::Fst::from_path(path).map(FuzzyMap)
+    pub unsafe fn from_path<P: AsRef<Path>, P1: AsRef<Path>>(fstpath: P, vecpath: P1) -> Result<Self, FstError> {
+        let fst = raw::Fst::from_path(fstpath).unwrap();
+        let id_list = Vec::<Vec<usize>>::new();
+        FuzzyMap::new(fst, id_list)
     }
 
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, FstError> {
-        raw::Fst::from_bytes(bytes).map(FuzzyMap)
+    pub fn from_bytes(fstbytes: Vec<u8>, vecbytes: Vec<Vec<usize>>) -> Result<Self, FstError> {
+        let fst = raw::Fst::from_bytes(fstbytes).unwrap();
+        let id_list = Vec::<Vec<usize>>::new();
+        FuzzyMap::new(fst, id_list)
     }
 
     pub fn from_iter<T, I>(iter: I) -> Result<Self, FstError>
@@ -61,18 +68,19 @@ impl FuzzyMap {
 }
 
 pub struct FuzzyMapBuilder<W> {
-    builder: raw::Builder<W>
+    builder: raw::Builder<W>,
+    id_builder: Vec<Vec<usize>>
 }
 
 impl FuzzyMapBuilder<Vec<u8>> {
     pub fn memory() -> Self {
-        FuzzyMapBuilder { builder: raw::Builder::memory() }
+        FuzzyMapBuilder { builder: raw::Builder::memory(), id_builder: Vec::<Vec<usize>>::new() }
     }
 }
 
 impl<W: Write> FuzzyMapBuilder<W> {
-    pub fn new(fst_wtr: W) -> Result<FuzzyMapBuilder<W>, FstError> {
-        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)? })
+    pub fn new(fst_wtr: W, id_wtr: W) -> Result<FuzzyMapBuilder<W>, FstError> {
+        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new()  })
     }
 
     pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: u64) -> Result<(), FstError> {
