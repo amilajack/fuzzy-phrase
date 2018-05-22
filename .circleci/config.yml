@@ -7,10 +7,13 @@ machine:
 jobs:
   build:
     docker:
-      - image: circleci/rust:1.26
+      - image: circleci/rust:1.26.0-jessie
     steps:
       - setup-docker-engine
       - checkout
+      - run:
+          name: Symlink Cargo
+          command: ln -s /usr/local/cargo ~/.cargo
       - restore_cache:
           key: build-{{ .Branch }}-{{ checksum "Cargo.toml" }}
       - run:
