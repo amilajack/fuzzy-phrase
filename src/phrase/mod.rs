@@ -160,7 +160,7 @@ impl PhraseSet {
         // doesn't mean that there's actually a match.  we have to look at actual values and ask
         // whether or not any of them really fall within the sought range. Since none do, we'd
         // return false.
-        debug_assert!((actual_min_key < sought_min_key) && (actual_max_key > sought_max_key));
+        debug_assert!((actual_min_key <= sought_min_key) && (actual_max_key >= sought_max_key));
 
         // The same is true here, so we need to look for any evidence that there's at least one
         // valid path in the graph that is within our sought range. We need to traverse the subtree
@@ -190,6 +190,18 @@ impl PhraseSet {
             looks = next_looks;
             i += 1
         }
+
+        // in the unlikely event that the min and max sought keys are the same
+        // AND they match an edge of the actual range, we'll have followed them through
+        // but never found anything in between them. this logic handles that edge case
+        if (sought_max_key == sought_min_key) && (
+            (sought_min_key == actual_max_key) | (sought_min_key == actual_min_key)) {
+            match self.partial_search(full_word_addr, &sought_max_key) {
+                Some(..) => { return true },
+                _ => (),
+            }
+        }
+
         return false
     }
 
