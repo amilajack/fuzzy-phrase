@@ -1,36 +1,55 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::collections::HashMap;
+use std::io::{BufRead, BufReader, SeekFrom};
+use std::collections::{BTreeSet, BTreeMap};
 use std::rc::Rc;
-use itertools::Itertools;
 use criterion::{Criterion, Fun, Bencher};
-use reqwest;
-use fst::raw::Output;
 use fuzzy_phrase::{PhraseSet, PhraseSetBuilder};
 use fuzzy_phrase::phrase::query::{QueryWord, QueryPhrase};
 
-pub fn build_phrase_graph(file_loc: &str) -> (HashMap<String, u32>, Vec<Vec<u32>>, PhraseSet) {
+fn tokenize(s: &str) -> Vec<String> {
+    s.split(" ").map(|w| w.to_lowercase()).collect()
+}
+
+pub fn build_phrase_graph(file_loc: &str) -> (BTreeMap<String, u32>, Vec<Vec<u32>>, PhraseSet) {
     // fetch data and build the structures
     let mut autoinc = 0;
-    let mut word_to_id: HashMap<String, u32> = HashMap::new();
     let f = File::open(file_loc).expect("tried to open_file");
-    let mut file_buf = BufReader::new(&f);
+    let file_buf = BufReader::new(&f);
 
-    let mut build = PhraseSetBuilder::memory();
+    // Build a vocabulary of the unique words in the test set
+    let mut vocabulary = BTreeSet::new();
+    for line in file_buf.lines() {
+       let s: String = line.unwrap();
+       let words = tokenize(s.as_str());
+       for word in words {
+           vocabulary.insert(word);
+       }
+    }
 
+    // Build a map from words to ids
+    let mut word_to_id: BTreeMap<String, u32> = BTreeMap::new();
+    for word in &vocabulary {
+        word_to_id.insert(word.to_string(), autoinc);
+        autoinc += 1;
+    }
+
+    let f = File::open(file_loc).expect("tried to open_file");
+    let file_buf = BufReader::new(&f);
     let mut phrases: Vec<Vec<u32>> = vec![];
     for line in file_buf.lines() {
        let s: String = line.unwrap();
        let mut word_ids: Vec<u32> = vec![];
-       for word in s.as_str().split(" ").map(|w| w.to_lowercase()) {
-           let word_id = word_to_id.entry(word.to_owned()).or_insert(autoinc);
+       let words = tokenize(s.as_str());
+       for word in words {
+           let word_id = word_to_id.get(&word).unwrap();
            word_ids.push(*word_id);
-           autoinc += 1;
        }
        phrases.push(word_ids);
     }
 
     phrases.sort();
+
+    let mut build = PhraseSetBuilder::memory();
 
     for phrase in phrases.iter() {
         build.insert(&phrase).unwrap();
@@ -48,7 +67,7 @@ pub fn benchmark(c: &mut Criterion) {
     // the things I'm going to set up once and share across benchmarks are a list of words
     // and a built prefix set, so define a struct to contain them
     struct BenchData {
-        word_to_id: HashMap<String, u32>,
+        word_to_id: BTreeMap<String, u32>,
         phrases: Vec<Vec<u32>>,
         phrase_set: PhraseSet
     };
@@ -82,7 +101,7 @@ pub fn benchmark(c: &mut Criterion) {
                 .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
                 .collect::<Vec<QueryWord>>();
             let query_phrase = QueryPhrase::new(&query_words).unwrap();
-            data.phrase_set.contains(query_phrase);
+            let _result = data.phrase_set.contains(query_phrase).unwrap();
         });
     }));
 
@@ -97,7 +116,27 @@ pub fn benchmark(c: &mut Criterion) {
                 .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
                 .collect::<Vec<QueryWord>>();
             let query_phrase = QueryPhrase::new(&query_words).unwrap();
-            data.phrase_set.contains_prefix(query_phrase);
+            let _result = data.phrase_set.contains_prefix(query_phrase).unwrap();
+        });
+    }));
+
+    // data is shadowed here for ease of copying and pasting, but this is a new clone
+    // (again, same data, new reference, because it's an Rc)
+    let data = shared_data.clone();
+    to_bench.push(Fun::new("range_contains_prefix", move |b: &mut Bencher, _i| {
+        let mut cycle = data.phrases.iter().cycle();
+        b.iter(|| {
+            let word_ids = cycle.next().unwrap();
+            let fullword_ids = &word_ids[..word_ids.len()];
+            let last_id = &word_ids[word_ids.len()-1];
+            let last_id_min = 0.max(last_id - 50);
+            let last_id_max = last_id + 50;
+            let mut query_words = fullword_ids.iter()
+                .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+                .collect::<Vec<QueryWord>>();
+            query_words.push(QueryWord::Prefix{ id_range: (last_id_min, last_id_max) });
+            let query_phrase = QueryPhrase::new(&query_words).unwrap();
+            let _result = data.phrase_set.contains_prefix(query_phrase).unwrap();
         });
     }));
 
