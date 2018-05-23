@@ -17,31 +17,22 @@ use strsim::damerau_levenshtein;
 
 static BIG_NUMBER: usize = 1 << 30;
 
-#[derive(Deserialize)]
 pub struct FuzzyMap {
     id_list: Vec<Vec<usize>>,
-    #[serde(default, skip)]
     fst: raw::Fst
 }
 
-impl Default for FuzzyMap {
-    fn default() -> FuzzyMap {
-        FuzzyMap { id_list: self.id_list, fst: self.fst }
-    }
-}
+#[derive(Serialize, Deserialize)]
+pub struct SerializableIdList(Vec<Vec<usize>>);
 
 impl FuzzyMap {
-    pub fn new(fst: raw::Fst, id_list: Vec<Vec<usize>>) -> Result<Self, FstError> {
-        Ok(FuzzyMap {fst: fst, id_list: id_list, ..Default::default()})
-    }
-
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
         let fst = raw::Fst::from_path(&path).unwrap();
         let directory = &path.as_ref().to_owned();
         let mf_reader = BufReader::new(fs::File::open(directory.join(Path::new(".msg")))?);
-        let id_list = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
-        FuzzyMap::new(fst, id_list)
+        let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
+        Ok(FuzzyMap { id_list: id_list.0, fst: fst })
     }
 
     pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
@@ -127,13 +118,9 @@ impl FuzzyMap {
     }
 }
 
-#[derive(Serialize)]
 pub struct FuzzyMapBuilder {
     id_builder: Vec<Vec<usize>>,
-
-    #[serde(skip_serializing)]
     builder: raw::Builder<BufWriter<File>>,
-    #[serde(skip_serializing)]
     file_path: PathBuf
 }
 
@@ -146,7 +133,7 @@ impl FuzzyMapBuilder {
         Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), file_path: directory })
     }
 
-    fn build<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
+    pub fn build<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
         let word_variants = super::create_variants(words, edit_distance);
         for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
@@ -174,9 +161,9 @@ impl FuzzyMapBuilder {
         Ok(())
     }
 
-    pub fn finish(self) -> Result<(), FstError> {
+    fn finish(self) -> Result<(), FstError> {
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.join(Path::new(".msg")))?);
-        self.id_builder.serialize(&mut Serializer::new(mf_wtr));
+        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr));
         self.builder.finish()
     }
 
