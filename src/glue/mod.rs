@@ -190,6 +190,14 @@ impl FuzzyPhraseSet {
         }
         Ok(self.phrase_set.contains_prefix(QueryPhrase::new(&id_phrase)?)?)
     }
+
+    // convenience method that splits the input string on the space character
+    // IT DOES NOT DO PROPER TOKENIZATION; if you need that, use a real tokenizer and call
+    // insert directly
+    pub fn contains_prefix_str(&self, phrase: &str) -> Result<bool, Box<Error>> {
+        let phrase_v: Vec<&str> = phrase.split(' ').collect();
+        self.contains_prefix(&phrase_v)
+    }
 }
 
 #[cfg(test)]
@@ -210,6 +218,7 @@ mod tests {
         builder.finish().unwrap();
 
         let set = FuzzyPhraseSet::from_path(&dir.path()).unwrap();
+        // contains
         assert!(set.contains_str("100 main street").unwrap());
         assert!(set.contains_str("200 main street").unwrap());
         assert!(set.contains_str("100 main ave").unwrap());
@@ -221,5 +230,23 @@ mod tests {
         assert!(!set.contains_str("100 main streetr").unwrap());
         assert!(!set.contains_str("100 main street r").unwrap());
         assert!(!set.contains_str("100 main street ave").unwrap());
+
+        // contains prefix -- everything that works in full works as prefix
+        assert!(set.contains_prefix_str("100 main street").unwrap());
+        assert!(set.contains_prefix_str("200 main street").unwrap());
+        assert!(set.contains_prefix_str("100 main ave").unwrap());
+        assert!(set.contains_prefix_str("300 mlk blvd").unwrap());
+
+        // contains prefix -- drop a letter
+        assert!(set.contains_prefix_str("100 main stree").unwrap());
+        assert!(set.contains_prefix_str("200 main stree").unwrap());
+        assert!(set.contains_prefix_str("100 main av").unwrap());
+        assert!(set.contains_prefix_str("300 mlk blv").unwrap());
+
+        // contains prefix -- drop a word
+        assert!(set.contains_prefix_str("100 main").unwrap());
+        assert!(set.contains_prefix_str("200 main").unwrap());
+        assert!(set.contains_prefix_str("100 main").unwrap());
+        assert!(set.contains_prefix_str("300 mlk").unwrap());
     }
 }
