@@ -1,6 +1,6 @@
 use fst::{IntoStreamer, Streamer, Automaton};
 use std::fs;
-use std::collections::HashSet;
+use std::iter;
 use std::error::Error;
 use itertools::Itertools;
 use fst::raw;
@@ -69,22 +69,12 @@ impl FuzzyMap {
     }
     //get rid of ids
     pub fn lookup<'a, F>(&self, query: &str, edit_distance: u64, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
-        let mut e_flag: u64 = 1;
-        if edit_distance == 1 { e_flag = 2; }
-        let levenshtein_limit : usize;
-        let mut query_variants = Vec::new();
         let mut matches = Vec::<usize>::new();
 
-        //create variants of the query itself
-        query_variants.push(query.to_owned());
-        let mut variants: HashSet<String> = HashSet::new();
-        let all_query_variants = super::edits(&query, e_flag, 2, &mut variants);
-        for j in all_query_variants.iter() {
-            query_variants.push(j.to_owned());
-        }
-        query_variants.dedup();
+        let variants = super::get_variants(&query, edit_distance);
 
-        for i in query_variants {
+        // check the query itself and the variants
+        for i in iter::once(query).chain(variants.iter().map(|a| a.as_str())) {
             match self.fst.get(&i) {
                 Some (idx) => {
                     let uidx = idx.value() as usize;
@@ -102,16 +92,10 @@ impl FuzzyMap {
         //return all ids that match
         matches.sort();
 
-        //checks all words whose damerau levenshtein edit distance is lesser than 2
-        if edit_distance == 1 {
-            levenshtein_limit = 2;
-        } else { levenshtein_limit = 3; }
-
-
         Ok(matches
             .into_iter().dedup()
             .map(lookup_fn)
-            .filter(|word| damerau_levenshtein(query, word) < levenshtein_limit as usize)
+            .filter(|word| damerau_levenshtein(query, word) <= edit_distance as usize)
             .map(|word| word.to_owned())
             .collect::<Vec<String>>()
         )
@@ -133,8 +117,8 @@ impl FuzzyMapBuilder {
         Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), file_path: directory })
     }
 
-    pub fn build<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
-        let word_variants = super::create_variants(words, edit_distance);
+    pub fn build_from_iter<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
+        let word_variants = super::get_all_variants(words, edit_distance);
         for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
             let id = if opts.len() == 1 {
