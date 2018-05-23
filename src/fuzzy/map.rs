@@ -1,5 +1,5 @@
 use fst::{IntoStreamer, Streamer, Automaton};
-use std;
+use std::fs;
 use std::collections::HashSet;
 use std::error::Error;
 use itertools::Itertools;
@@ -9,66 +9,75 @@ use fst::automaton::{AlwaysMatch};
 #[cfg(feature = "mmap")]
 use std::path::{Path, PathBuf};
 use std::fs::File;
-use std::io::{BufWriter};
-use serde::{Serialize};
-use rmps::{Serializer};
+use std::io::{BufReader, BufWriter};
+use serde::{Deserialize, Serialize};
+use rmps::{Deserializer, Serializer};
 use strsim::damerau_levenshtein;
+#[cfg(test)] extern crate reqwest;
 
 static BIG_NUMBER: usize = 1 << 30;
 
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
-struct MultiIdxList(Vec<Vec<usize>>);
+#[derive(Deserialize)]
+pub struct FuzzyMap {
+    id_list: Vec<Vec<usize>>,
+    #[serde(default, skip)]
+    fst: raw::Fst
+}
 
-pub struct FuzzyMap(raw::Fst, MultiIdxList);
+impl Default for FuzzyMap {
+    fn default() -> FuzzyMap {
+        FuzzyMap { id_list: self.id_list, fst: self.fst }
+    }
+}
 
 impl FuzzyMap {
     pub fn new(fst: raw::Fst, id_list: Vec<Vec<usize>>) -> Result<Self, FstError> {
-        Ok(FuzzyMap(fst, MultiIdxList(id_list)))
+        Ok(FuzzyMap {fst: fst, id_list: id_list, ..Default::default()})
     }
 
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
-        //this to 1 path
-        let fst = raw::Fst::from_path(path).unwrap();
-        //Deserialize it and store in id_list
-        let id_list = Vec::<Vec<usize>>::new();
+        let fst = raw::Fst::from_path(&path).unwrap();
+        let directory = &path.as_ref().to_owned();
+        let mf_reader = BufReader::new(fs::File::open(directory.join(Path::new(".msg")))?);
+        let id_list = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
         FuzzyMap::new(fst, id_list)
     }
 
     pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
-        self.0.contains_key(key)
+        self.fst.contains_key(key)
     }
 
     pub fn stream(&self) -> Stream {
-        Stream(self.0.stream())
+        Stream(self.fst.stream())
     }
 
     pub fn range(&self) -> StreamBuilder {
-        StreamBuilder(self.0.range())
+        StreamBuilder(self.fst.range())
     }
 
     pub fn search<A: Automaton>(&self, aut: A) -> StreamBuilder<A> {
-        StreamBuilder(self.0.search(aut))
+        StreamBuilder(self.fst.search(aut))
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.fst.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.fst.is_empty()
     }
 
     pub fn as_fst(&self) -> &raw::Fst {
-        &self.0
+        &self.fst
     }
 
     // this one is from Map
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<u64> {
-        self.0.get(key).map(|output| output.value())
+        self.fst.get(key).map(|output| output.value())
     }
     //get rid of ids
-    pub fn lookup<'a, F>(&self, query: &str, edit_distance: u64, ids: &Vec<Vec<usize>>, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
+    pub fn lookup<'a, F>(&self, query: &str, edit_distance: u64, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
         let mut e_flag: u64 = 1;
         if edit_distance == 1 { e_flag = 2; }
         let levenshtein_limit : usize;
@@ -85,13 +94,13 @@ impl FuzzyMap {
         query_variants.dedup();
 
         for i in query_variants {
-            match self.0.get(&i) {
+            match self.fst.get(&i) {
                 Some (idx) => {
                     let uidx = idx.value() as usize;
                     if uidx < BIG_NUMBER {
                         matches.push(uidx);
                     } else {
-                       for x in &(ids)[uidx - BIG_NUMBER] {
+                       for x in &(self.id_list)[uidx - BIG_NUMBER] {
                             matches.push(*x);
                         }
                     }
@@ -118,43 +127,43 @@ impl FuzzyMap {
     }
 }
 
-// #[derive(Debug, PartialEq, Deserialize, Serialize)]
-// struct MultiIdBuilder(Vec<Vec<usize>>);
-
+#[derive(Serialize)]
 pub struct FuzzyMapBuilder {
-    builder: raw::Builder<BufWriter<File>>,
     id_builder: Vec<Vec<usize>>,
-    prefixFilePath: PathBuf
+
+    #[serde(skip_serializing)]
+    builder: raw::Builder<BufWriter<File>>,
+    #[serde(skip_serializing)]
+    file_path: PathBuf
 }
 
 impl FuzzyMapBuilder {
-    //takes one path
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<FuzzyMapBuilder, FstError> where P: std::convert::AsRef<std::ffi::OsStr> {
-        let filePath = path.as_ref().to_owned();
-        let mut fst_wtr = BufWriter::new(File::create(Path::new(&path).join(".fst"))?);
-        let mut id_wtr = BufWriter::new(File::create(Path::new(&path).join(".msg"))?);
-        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), prefixFilePath: filePath })
+
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
+        let directory = path.as_ref().to_owned();
+        let fst_wtr = BufWriter::new(fs::File::create(directory.join(Path::new(".fst")))?);
+
+        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), file_path: directory })
     }
 
-    pub fn build<'a, T>(&mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
+    fn build<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
         let word_variants = super::create_variants(words, edit_distance);
-        //precalculate the file path;
         for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
-            self.insert(key, opts)?
+            let id = if opts.len() == 1 {
+                opts[0].1
+            } else {
+                self.id_builder.push((&opts).iter().map(|t| t.1).collect::<Vec<_>>());
+                self.id_builder.len() - 1 + BIG_NUMBER
+            };
+            self.insert(key, id as u64)?;
         }
         self.finish()?;
         Ok(())
     }
 
-    pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: Vec<usize>) -> Result<(), FstError> {
-        let id = if ids.len() == 1 {
-            ids[0]
-        } else {
-            self.id_builder.push((&ids).iter().map(|t| 1).collect::<Vec<_>>());
-            self.id_builder.len() - 1 + BIG_NUMBER
-        };
-        self.builder.insert(key, id as u64)?;
+    fn insert<K: AsRef<[u8]>>(&mut self, key: K, ids: u64) -> Result<(), FstError> {
+        self.builder.insert(key, ids as u64)?;
         Ok(())
     }
 
@@ -166,10 +175,8 @@ impl FuzzyMapBuilder {
     }
 
     pub fn finish(self) -> Result<(), FstError> {
-        //based on the path internally - use the constructor path
-        let filePath: FuzzyMapBuilder.path;
-        let mut mf_wtr = BufWriter::new(File::create("midx.msg"));
-        self.id_builder.serialize(&mut Serializer::new(mf_wtr)?);
+        let mf_wtr = BufWriter::new(fs::File::create(self.file_path.join(Path::new(".msg")))?);
+        self.id_builder.serialize(&mut Serializer::new(mf_wtr));
         self.builder.finish()
     }
 
@@ -237,5 +244,51 @@ impl<'s, 'a, A: Automaton> IntoStreamer<'a> for StreamBuilder<'s, A> {
 
     fn into_stream(self) -> Self::Into {
         Stream(self.0.into_stream())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_test_cases_d_1() {
+        //building the structure with https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000
+        // let data = reqwest::get("https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000")
+        // .expect("tried to download data")
+        // .text().expect("tried to decode the data");
+        // let mut words = data.trim().split("\n").collect::<Vec<&str>>();
+        // words.sort();
+        // let dir = tempfile::tempdir().unwrap();
+        //
+        // //exact lookup, the original word in the data is - "albazan"
+        // let query1 = "alazan";
+        // let matches = FuzzyMap::lookup(&query1, 1, |id| &words[id]);
+        // assert_eq!(matches.unwrap(), ["albazan"]);
+
+        //exact lookup, the original word in the data is - "agߪkaधaݤcݤkaqag"
+        // let query2 = "agߪkaधaݤcݤkaqag";
+        // let matches = Symspell::FuzzyMap(&query2, 1, unwrapped_ids, |id| &words[id]);
+        // assert_eq!(matches.unwrap(), ["agߪkaधaݤcݤkaqag"]);
+        //
+        // //not exact lookup, the original word is - "blockquoteanciently", d=1
+        // let query3 = "blockquteanciently";
+        // let matches = Symspell::FuzzyMap(&query3, 1, unwrapped_ids, |id| &words[id]);
+        // assert_eq!(matches.unwrap(), ["blockquoteanciently"]);
+        //
+        // //not exact lookup, d=1, more more than one suggestion because of two similiar words in the data
+        // //albana and albazan
+        // let query4 = "albaza";
+        // let matches = Symspell::FuzzyMap(&query4, 1, unwrapped_ids, |id| &words[id]);
+        // assert_eq!(matches.unwrap(), ["albana", "albazan"]);
+        //
+        // //garbage input
+        // let query4 = "🤔";
+        // let matches = Symspell::FuzzyMap(&query4, 1, unwrapped_ids, |id| &words[id]);
+        // assert_eq!(matches.unwrap(), no_return);
+        //
+        // let query5 = "";
+        // let matches = Symspell::FuzzyMap(&query5, 1, unwrapped_ids, |id| &words[id]);
+        // assert_eq!(matches.unwrap(), no_return);
     }
 }
