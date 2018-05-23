@@ -1,6 +1,6 @@
 use fst::{IntoStreamer, Streamer, Automaton};
 use std::fs;
-use std::collections::HashSet;
+use std::iter;
 use std::error::Error;
 use itertools::Itertools;
 use fst::raw;
@@ -17,31 +17,22 @@ use strsim::damerau_levenshtein;
 
 static BIG_NUMBER: usize = 1 << 30;
 
-#[derive(Deserialize)]
 pub struct FuzzyMap {
     id_list: Vec<Vec<usize>>,
-    #[serde(default, skip)]
     fst: raw::Fst
 }
 
-impl Default for FuzzyMap {
-    fn default() -> FuzzyMap {
-        FuzzyMap { id_list: self.id_list, fst: self.fst }
-    }
-}
+#[derive(Serialize, Deserialize)]
+pub struct SerializableIdList(Vec<Vec<usize>>);
 
 impl FuzzyMap {
-    pub fn new(fst: raw::Fst, id_list: Vec<Vec<usize>>) -> Result<Self, FstError> {
-        Ok(FuzzyMap {fst: fst, id_list: id_list, ..Default::default()})
-    }
-
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
         let fst = raw::Fst::from_path(&path).unwrap();
         let directory = &path.as_ref().to_owned();
         let mf_reader = BufReader::new(fs::File::open(directory.join(Path::new(".msg")))?);
-        let id_list = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
-        FuzzyMap::new(fst, id_list)
+        let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
+        Ok(FuzzyMap { id_list: id_list.0, fst: fst })
     }
 
     pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
@@ -78,22 +69,12 @@ impl FuzzyMap {
     }
     //get rid of ids
     pub fn lookup<'a, F>(&self, query: &str, edit_distance: u64, lookup_fn: F) -> Result<Vec<String>, Box<Error>> where F: Fn(usize) -> &'a str {
-        let mut e_flag: u64 = 1;
-        if edit_distance == 1 { e_flag = 2; }
-        let levenshtein_limit : usize;
-        let mut query_variants = Vec::new();
         let mut matches = Vec::<usize>::new();
 
-        //create variants of the query itself
-        query_variants.push(query.to_owned());
-        let mut variants: HashSet<String> = HashSet::new();
-        let all_query_variants = super::edits(&query, e_flag, 2, &mut variants);
-        for j in all_query_variants.iter() {
-            query_variants.push(j.to_owned());
-        }
-        query_variants.dedup();
+        let variants = super::get_variants(&query, edit_distance);
 
-        for i in query_variants {
+        // check the query itself and the variants
+        for i in iter::once(query).chain(variants.iter().map(|a| a.as_str())) {
             match self.fst.get(&i) {
                 Some (idx) => {
                     let uidx = idx.value() as usize;
@@ -111,29 +92,19 @@ impl FuzzyMap {
         //return all ids that match
         matches.sort();
 
-        //checks all words whose damerau levenshtein edit distance is lesser than 2
-        if edit_distance == 1 {
-            levenshtein_limit = 2;
-        } else { levenshtein_limit = 3; }
-
-
         Ok(matches
             .into_iter().dedup()
             .map(lookup_fn)
-            .filter(|word| damerau_levenshtein(query, word) < levenshtein_limit as usize)
+            .filter(|word| damerau_levenshtein(query, word) <= edit_distance as usize)
             .map(|word| word.to_owned())
             .collect::<Vec<String>>()
         )
     }
 }
 
-#[derive(Serialize)]
 pub struct FuzzyMapBuilder {
     id_builder: Vec<Vec<usize>>,
-
-    #[serde(skip_serializing)]
     builder: raw::Builder<BufWriter<File>>,
-    #[serde(skip_serializing)]
     file_path: PathBuf
 }
 
@@ -146,8 +117,8 @@ impl FuzzyMapBuilder {
         Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), file_path: directory })
     }
 
-    fn build<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
-        let word_variants = super::create_variants(words, edit_distance);
+    pub fn build_from_iter<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
+        let word_variants = super::get_all_variants(words, edit_distance);
         for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
             let id = if opts.len() == 1 {
@@ -174,9 +145,9 @@ impl FuzzyMapBuilder {
         Ok(())
     }
 
-    pub fn finish(self) -> Result<(), FstError> {
+    fn finish(self) -> Result<(), FstError> {
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.join(Path::new(".msg")))?);
-        self.id_builder.serialize(&mut Serializer::new(mf_wtr));
+        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr));
         self.builder.finish()
     }
 
