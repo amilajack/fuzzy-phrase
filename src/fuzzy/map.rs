@@ -147,7 +147,7 @@ impl FuzzyMapBuilder {
 
     fn finish(self) -> Result<(), FstError> {
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.join(Path::new(".msg")))?);
-        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr));
+        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)).unwrap();
         self.builder.finish()
     }
 
@@ -235,7 +235,7 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let builder = FuzzyMapBuilder::new(&dir.path()).unwrap();
-        builder.build_from_iter(&words, 1);
+        builder.build_from_iter(&words, 1).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&dir.path()).unwrap() };
         let query1 = "alazan";
@@ -274,7 +274,7 @@ mod tests {
         let words = vec!["100", "main", "street"];
         let dir = tempfile::tempdir().unwrap();
         let builder = FuzzyMapBuilder::new(&dir.path()).unwrap();
-        builder.build_from_iter(&words, 2);
+        builder.build_from_iter(&words, 2).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&dir.path()).unwrap() };
         let query1 = "sret";
