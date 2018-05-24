@@ -160,7 +160,7 @@ impl PhraseSet {
         // doesn't mean that there's actually a match.  we have to look at actual values and ask
         // whether or not any of them really fall within the sought range. Since none do, we'd
         // return false.
-        debug_assert!((actual_min_key < sought_min_key) && (actual_max_key > sought_max_key));
+        debug_assert!((actual_min_key <= sought_min_key) && (actual_max_key >= sought_max_key));
 
         // The same is true here, so we need to look for any evidence that there's at least one
         // valid path in the graph that is within our sought range. We need to traverse the subtree
@@ -190,6 +190,18 @@ impl PhraseSet {
             looks = next_looks;
             i += 1
         }
+
+        // in the unlikely event that the min and max sought keys are the same
+        // AND they match an edge of the actual range, we'll have followed them through
+        // but never found anything in between them. this logic handles that edge case
+        if (sought_max_key == sought_min_key) && (
+            (sought_min_key == actual_max_key) | (sought_min_key == actual_min_key)) {
+            match self.partial_search(full_word_addr, &sought_max_key) {
+                Some(..) => { return true },
+                _ => (),
+            }
+        }
+
         return false
     }
 
@@ -681,23 +693,28 @@ mod tests {
         let phrase = QueryPhrase::new(&word_seq).unwrap();
         assert_eq!(false, phrase_set.contains_prefix(phrase).unwrap());
 
+        // matches because (2, 1, 0) is on the low edge of the actual range, but sought range has
+        // same min and max
+        let matching_edge_low = QueryWord::Prefix{ id_range: (
+                three_byte_decode(&[2u8, 1u8, 0u8]),
+                three_byte_decode(&[2u8, 1u8, 0u8]),
+                ) };
+        let word_seq = [ words[0], words[1], matching_edge_low ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
+
+        // matches because (2, 1, 0) is on the low edge of the actual range, but sought range has
+        // same min and max
+        let matching_edge_hi = QueryWord::Prefix{ id_range: (
+                three_byte_decode(&[6u8, 5u8, 8u8]),
+                three_byte_decode(&[6u8, 5u8, 8u8]),
+                ) };
+        let word_seq = [ words[0], words[1], matching_edge_hi ];
+        let phrase = QueryPhrase::new(&word_seq).unwrap();
+        assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
+
+
     }
 
-    // fn contains_prefix_range() {
-    //     // This is where we'll write our map to.
-    //     let wtr = io::BufWriter::new(File::create("map.fst").unwrap());
-    //     let mut build = PhraseSetBuilder::new(wtr).unwrap();
-    //     // let mut build = PhraseSetBuilder::memory();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[2u8, 1u8, 0u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[2u8, 3u8, 2u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[2u8, 3u8, 4u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[2u8, 5u8, 6u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[4u8, 1u8, 1u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[4u8, 3u8, 3u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[4u8, 5u8, 5u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[6u8, 3u8, 4u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[6u8, 3u8, 7u8]), 345u32]).unwrap();
-    //     build.insert(&[1u32, 61_528_u32, three_byte_decode(&[6u8, 5u8, 8u8]), 345u32]).unwrap();
-    //     build.finish().unwrap();
 }
 
