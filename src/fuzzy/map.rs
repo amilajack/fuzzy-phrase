@@ -28,8 +28,8 @@ pub struct SerializableIdList(Vec<Vec<usize>>);
 impl FuzzyMap {
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
-        let fst = raw::Fst::from_path(&path).unwrap();
         let directory = &path.as_ref().to_owned();
+        let fst = raw::Fst::from_path(directory.join(Path::new(".fst"))).unwrap();
         let mf_reader = BufReader::new(fs::File::open(directory.join(Path::new(".msg")))?);
         let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
         Ok(FuzzyMap { id_list: id_list.0, fst: fst })
@@ -224,42 +224,61 @@ mod tests {
 
     #[test]
     fn lookup_test_cases_d_1() {
+        extern crate tempfile;
         //building the structure with https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000
-        // let data = reqwest::get("https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000")
-        // .expect("tried to download data")
-        // .text().expect("tried to decode the data");
-        // let mut words = data.trim().split("\n").collect::<Vec<&str>>();
-        // words.sort();
-        // let dir = tempfile::tempdir().unwrap();
-        //
-        // //exact lookup, the original word in the data is - "albazan"
-        // let query1 = "alazan";
-        // let matches = FuzzyMap::lookup(&query1, 1, |id| &words[id]);
-        // assert_eq!(matches.unwrap(), ["albazan"]);
+        let data = reqwest::get("https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000")
+        .expect("tried to download data")
+        .text().expect("tried to decode the data");
+        let mut words = data.trim().split("\n").collect::<Vec<&str>>();
+        words.sort();
+        let no_return = Vec::<String>::new();
+
+        let dir = tempfile::tempdir().unwrap();
+        let builder = FuzzyMapBuilder::new(&dir.path()).unwrap();
+        builder.build_from_iter(&words, 1);
+
+        let map = unsafe { FuzzyMap::from_path(&dir.path()).unwrap() };
+        let query1 = "alazan";
+        let matches = map.lookup(&query1, 1, |id| &words[id]);
+        assert_eq!(matches.unwrap(), ["albazan"]);
 
         //exact lookup, the original word in the data is - "agߪkaधaݤcݤkaqag"
-        // let query2 = "agߪkaधaݤcݤkaqag";
-        // let matches = Symspell::FuzzyMap(&query2, 1, unwrapped_ids, |id| &words[id]);
-        // assert_eq!(matches.unwrap(), ["agߪkaधaݤcݤkaqag"]);
-        //
-        // //not exact lookup, the original word is - "blockquoteanciently", d=1
-        // let query3 = "blockquteanciently";
-        // let matches = Symspell::FuzzyMap(&query3, 1, unwrapped_ids, |id| &words[id]);
-        // assert_eq!(matches.unwrap(), ["blockquoteanciently"]);
-        //
-        // //not exact lookup, d=1, more more than one suggestion because of two similiar words in the data
-        // //albana and albazan
-        // let query4 = "albaza";
-        // let matches = Symspell::FuzzyMap(&query4, 1, unwrapped_ids, |id| &words[id]);
-        // assert_eq!(matches.unwrap(), ["albana", "albazan"]);
-        //
-        // //garbage input
-        // let query4 = "🤔";
-        // let matches = Symspell::FuzzyMap(&query4, 1, unwrapped_ids, |id| &words[id]);
-        // assert_eq!(matches.unwrap(), no_return);
-        //
-        // let query5 = "";
-        // let matches = Symspell::FuzzyMap(&query5, 1, unwrapped_ids, |id| &words[id]);
-        // assert_eq!(matches.unwrap(), no_return);
+        let query2 = "agߪkaधaݤcݤkaqag";
+        let matches = map.lookup(&query2, 1, |id| &words[id]);
+        assert_eq!(matches.unwrap(), ["agߪkaधaݤcݤkaqag"]);
+
+        //not exact lookup, the original word is - "blockquoteanciently", d=1
+        let query3 = "blockquteanciently";
+        let matches = map.lookup(&query3, 1, |id| &words[id]);
+        assert_eq!(matches.unwrap(), ["blockquoteanciently"]);
+
+        //not exact lookup, d=1, more more than one suggestion because of two similiar words in the data
+        //albana and albazan
+        let query4 = "albaza";
+        let matches = map.lookup(&query4, 1, |id| &words[id]);
+        assert_eq!(matches.unwrap(), ["albana", "albazan"]);
+
+        //garbage input
+        let query4 = "🤔";
+        let matches = map.lookup(&query4, 1, |id| &words[id]);
+        assert_eq!(matches.unwrap(), no_return);
+
+        let query5 = "";
+        let matches = map.lookup(&query5, 1, |id| &words[id]);
+        assert_eq!(matches.unwrap(), no_return);
+    }
+    #[test]
+
+    fn lookup_test_cases_d_2() {
+        extern crate tempfile;
+        let words = vec!["100", "main", "street"];
+        let dir = tempfile::tempdir().unwrap();
+        let builder = FuzzyMapBuilder::new(&dir.path()).unwrap();
+        builder.build_from_iter(&words, 2);
+
+        let map = unsafe { FuzzyMap::from_path(&dir.path()).unwrap() };
+        let query1 = "sret";
+        let matches = map.lookup(&query1, 2, |id| &words[id]);
+        assert_eq!(matches.unwrap(), ["street"])
     }
 }
