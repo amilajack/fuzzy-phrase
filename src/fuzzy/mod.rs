@@ -25,8 +25,7 @@ fn get_all_variants<'a, T>(words: T, edit_distance: u64) -> Vec<(String, usize)>
 #[inline(always)]
 fn get_variants<'a>(word: &str, edit_distance: u64) -> HashSet<String> {
     let mut variants: HashSet<String> = HashSet::new();
-    let max_distance: u64 = edit_distance + 1;
-    get_variants_recursive(word, edit_distance, max_distance, &mut variants);
+    get_variants_recursive(word, 1, edit_distance, &mut variants);
     variants
 }
 
