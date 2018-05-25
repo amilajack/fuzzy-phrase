@@ -7,15 +7,15 @@ pub use self::map::FuzzyMapBuilder;
 
 //creates delete variants for every word in the list
 //using usize for - https://stackoverflow.com/questions/29592256/whats-the-difference-between-usize-and-u32?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-fn get_all_variants<'a, T>(words: T, edit_distance: u64) -> Vec<(String, usize)> where T: IntoIterator<Item=&'a &'a str> {
+fn get_all_variants<'a, T>(words: T, edit_distance: u64) -> Vec<(String, usize)> where T: Iterator<Item=&'a str> {
     let mut word_variants = Vec::<(String, usize)>::new();
 
     //treating &words as a slice, since, slices are read-only objects
-    for (i, &word) in words.into_iter().enumerate() {
+    for (i, word) in words.enumerate() {
         word_variants.push((word.to_owned(), i));
         let variants = get_variants(&word, edit_distance);
-        for j in variants.iter() {
-            word_variants.push((j.to_owned(), i));
+        for j in variants.into_iter() {
+            word_variants.push((j, i));
         }
     }
     word_variants.sort();

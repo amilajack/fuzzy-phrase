@@ -28,7 +28,7 @@ pub struct SerializableIdList(Vec<Vec<usize>>);
 impl FuzzyMap {
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
-        let directory = &path.as_ref().to_owned();
+        let directory = path.as_ref();
         let fst = raw::Fst::from_path(directory.join(Path::new(".fst"))).unwrap();
         let mf_reader = BufReader::new(fs::File::open(directory.join(Path::new(".msg")))?);
         let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
@@ -109,27 +109,24 @@ pub struct FuzzyMapBuilder {
 }
 
 impl FuzzyMapBuilder {
-
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
+    pub fn build_from_iter<'a, T, P: AsRef<Path>>(path: P, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: Iterator<Item=&'a str> {
         let directory = path.as_ref().to_owned();
         let fst_wtr = BufWriter::new(fs::File::create(directory.join(Path::new(".fst")))?);
 
-        Ok(FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), file_path: directory })
-    }
+        let mut builder = FuzzyMapBuilder { builder: raw::Builder::new_type(fst_wtr, 0)?, id_builder: Vec::<Vec<usize>>::new(), file_path: directory };
 
-    pub fn build_from_iter<'a, T>(mut self, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: IntoIterator<Item=&'a &'a str> {
         let word_variants = super::get_all_variants(words, edit_distance);
         for (key, group) in &(&word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
             let id = if opts.len() == 1 {
                 opts[0].1
             } else {
-                self.id_builder.push((&opts).iter().map(|t| t.1).collect::<Vec<_>>());
-                self.id_builder.len() - 1 + BIG_NUMBER
+                builder.id_builder.push((&opts).iter().map(|t| t.1).collect::<Vec<_>>());
+                builder.id_builder.len() - 1 + BIG_NUMBER
             };
-            self.insert(key, id as u64)?;
+            builder.insert(key, id as u64)?;
         }
-        self.finish()?;
+        builder.finish()?;
         Ok(())
     }
 
@@ -234,8 +231,7 @@ mod tests {
         let no_return = Vec::<String>::new();
 
         let dir = tempfile::tempdir().unwrap();
-        let builder = FuzzyMapBuilder::new(&dir.path()).unwrap();
-        builder.build_from_iter(&words, 1).unwrap();
+        FuzzyMapBuilder::build_from_iter(&dir.path(), words.iter().cloned(), 1).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&dir.path()).unwrap() };
         let query1 = "alazan";
@@ -273,8 +269,7 @@ mod tests {
         extern crate tempfile;
         let words = vec!["100", "main", "street"];
         let dir = tempfile::tempdir().unwrap();
-        let builder = FuzzyMapBuilder::new(&dir.path()).unwrap();
-        builder.build_from_iter(&words, 2).unwrap();
+        FuzzyMapBuilder::build_from_iter(&dir.path(), words.iter().cloned(), 2).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&dir.path()).unwrap() };
         let query1 = "sret";
