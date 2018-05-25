@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, SeekFrom};
 use std::collections::{BTreeSet, BTreeMap};
 use std::rc::Rc;
+use std::env;
 use rand::{thread_rng, seq, Rng};
 use criterion::{Criterion, Fun, Bencher};
 use fuzzy_phrase::{PhraseSet, PhraseSetBuilder};
@@ -72,8 +73,14 @@ pub fn benchmark(c: &mut Criterion) {
         phrases: Vec<Vec<u32>>,
         phrase_set: PhraseSet
     };
-
-    let (word_to_id, phrases, phrase_set) = build_phrase_graph("./benches/data/phrase_test.txt");
+    let data_loc = match env::var("PHRASE_BENCH") {
+        Ok(f) => {
+            println!("file loc is {}", f);
+            f
+        },
+        Err(..) => String::from("./benches/data/phrase_test.txt"),
+    };
+    let (word_to_id, phrases, phrase_set) = build_phrase_graph(&data_loc);
 
     // move the prebuilt data into a reference-counted struct
     let shared_data = Rc::new(BenchData { word_to_id, phrases, phrase_set });
