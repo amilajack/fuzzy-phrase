@@ -9,6 +9,7 @@ use serde_json;
 use ::prefix::{PrefixSet, PrefixSetBuilder};
 use ::phrase::{PhraseSet, PhraseSetBuilder};
 use ::phrase::query::{QueryPhrase, QueryWord};
+use ::fuzzy::{FuzzyMap, FuzzyMapBuilder};
 
 #[derive(Default, Debug)]
 pub struct FuzzyPhraseSetBuilder {
@@ -78,6 +79,8 @@ impl FuzzyPhraseSetBuilder {
         let prefix_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("prefix.fst")))?);
         let mut prefix_set_builder = PrefixSetBuilder::new(prefix_writer)?;
 
+        let mut fuzzy_map_builder = FuzzyMapBuilder::new(self.directory.join(Path::new("fuzzy")), 1)?;
+
         // words_to_tmpids is a btreemap over word keys,
         // so when we iterate over it, we'll get back words sorted
         // we'll do three things with that:
@@ -86,13 +89,13 @@ impl FuzzyPhraseSetBuilder {
         // - build up our fuzzy set (this one doesn't require the sorted words, but it doesn't hurt)
         for (id, (word, tmpid)) in self.words_to_tmpids.iter().enumerate() {
             prefix_set_builder.insert(word)?;
+            fuzzy_map_builder.insert(word, id as u64);
 
             tmpids_to_ids[*tmpid as usize] = id as u32;
-
-            // TODO: insert into fuzzy map
         }
 
         prefix_set_builder.finish()?;
+        fuzzy_map_builder.finish()?;
 
         // next, renumber all of the current phrases with real rather than temp IDs
         for phrase in self.phrases.iter_mut() {
@@ -123,6 +126,7 @@ impl FuzzyPhraseSetBuilder {
 pub struct FuzzyPhraseSet {
     prefix_set: PrefixSet,
     phrase_set: PhraseSet,
+    fuzzy_map: FuzzyMap,
 }
 
 impl FuzzyPhraseSet {
@@ -151,7 +155,10 @@ impl FuzzyPhraseSet {
         }
         let phrase_set = unsafe { PhraseSet::from_path(&phrase_path) }?;
 
-        Ok(FuzzyPhraseSet { prefix_set, phrase_set })
+        let fuzzy_path = directory.join(Path::new("fuzzy"));
+        let fuzzy_map = unsafe { FuzzyMap::from_path(&fuzzy_path) }?;
+
+        Ok(FuzzyPhraseSet { prefix_set, phrase_set, fuzzy_map })
     }
 
     pub fn contains(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
