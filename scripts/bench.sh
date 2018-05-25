@@ -52,7 +52,7 @@ function run() {
     script=$4
     fname="${country}_${language}_${script}.txt"
     echo "running"
-    env PHRASE_BENCH="${TMP}/${type}/${fname}" cargo bench "${type}"
+    env PHRASE_BENCH="${TMP}/${type}/${fname}" cargo bench -v "${type}"
     exit 0
 }
 
