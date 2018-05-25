@@ -6,13 +6,13 @@ pub use self::map::FuzzyMapBuilder;
 #[cfg(test)] extern crate reqwest;
 
 #[inline(always)]
-fn get_variants<'a>(word: &str, edit_distance: u64) -> HashSet<String> {
+fn get_variants<'a>(word: &str, edit_distance: u8) -> HashSet<String> {
     let mut variants: HashSet<String> = HashSet::new();
     get_variants_recursive(word, 1, edit_distance, &mut variants);
     variants
 }
 
-fn get_variants_recursive<'a>(word: &str, edit_distance: u64, max_distance: u64, delete_variants: &'a mut HashSet<String>) -> () {
+fn get_variants_recursive<'a>(word: &str, edit_distance: u8, max_distance: u8, delete_variants: &'a mut HashSet<String>) -> () {
     let mut iter = word.char_indices().peekable();
 
     while let Some((pos, _char)) = iter.next() {
