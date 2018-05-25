@@ -15,7 +15,8 @@ use rmps::{Deserializer, Serializer};
 use strsim::damerau_levenshtein;
 #[cfg(test)] extern crate reqwest;
 
-static BIG_NUMBER: u64 = 1 << 30;
+static MULTI_FLAG: u64 = 1 << 63;
+static MULTI_MASK: u64 = !(1 << 63);
 
 pub struct FuzzyMap {
     id_list: Vec<Vec<u32>>,
@@ -85,12 +86,12 @@ impl FuzzyMap {
             match self.fst.get(&i) {
                 Some (idx) => {
                     let uidx = idx.value();
-                    if uidx < BIG_NUMBER {
-                        matches.push(uidx as u32);
-                    } else {
-                       for x in &(self.id_list)[(uidx - BIG_NUMBER) as usize] {
+                    if uidx & MULTI_FLAG != 0 {
+                        for x in &(self.id_list)[(uidx & MULTI_MASK) as usize] {
                             matches.push(*x as u32);
                         }
+                    } else {
+                        matches.push(uidx as u32);
                     }
                 }
                 None => {}
@@ -171,7 +172,7 @@ impl FuzzyMapBuilder {
                 opts[0].1 as u64
             } else {
                 self.id_builder.push((&opts).iter().map(|t| t.1).collect::<Vec<_>>());
-                (self.id_builder.len() - 1) as u64 + BIG_NUMBER
+                (self.id_builder.len() - 1) as u64 | MULTI_FLAG
             };
             self.builder.insert(key, id)?;
         }
@@ -272,33 +273,38 @@ mod tests {
         FuzzyMapBuilder::build_from_iter(&file_start, words.iter().cloned(), 1).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
-        let query1 = "alazan";
-        let matches = map.lookup(&query1, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("albazan", query1)]);
+        let query = "alazan";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("albazan", query)]);
 
         //exact lookup, the original word in the data is - "agߪkaधaݤcݤkaqag"
-        let query2 = "agߪkaधaݤcݤkaqag";
-        let matches = map.lookup(&query2, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("agߪkaधaݤcݤkaqag", query2)]);
+        let query = "agߪkaधaݤcݤkaqag";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("agߪkaधaݤcݤkaqag", query)]);
 
         //not exact lookup, the original word is - "blockquoteanciently", d=1
-        let query3 = "blockquteanciently";
-        let matches = map.lookup(&query3, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("blockquoteanciently", query3)]);
+        let query = "blockquteanciently";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("blockquoteanciently", query)]);
 
         //not exact lookup, d=1, more more than one suggestion because of two similiar words in the data
         //albana and albazan
-        let query4 = "albaza";
-        let matches = map.lookup(&query4, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("albana", query4), expect("albazan", query4)]);
+        let query = "albaza";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("albana", query), expect("albazan", query)]);
+
+        //include a test that explores multiple results that share an fst entry
+        let query = "fern";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("farn", query), expect("fernd", query), expect("ferni", query)]);
 
         //garbage input
-        let query4 = "🤔";
-        let matches = map.lookup(&query4, 1, |id| &words[id as usize]);
+        let query = "🤔";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
         assert_eq!(matches.unwrap(), no_return);
 
-        let query5 = "";
-        let matches = map.lookup(&query5, 1, |id| &words[id as usize]);
+        let query = "";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
         assert_eq!(matches.unwrap(), no_return);
     }
 
@@ -316,8 +322,8 @@ mod tests {
         FuzzyMapBuilder::build_from_iter(&file_start, words.iter().cloned(), 2).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
-        let query1 = "sret";
-        let matches = map.lookup(&query1, 2, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("street", query1)])
+        let query = "sret";
+        let matches = map.lookup(&query, 2, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("street", query)])
     }
 }
