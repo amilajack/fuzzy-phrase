@@ -5,23 +5,6 @@ pub use self::map::FuzzyMapBuilder;
 
 #[cfg(test)] extern crate reqwest;
 
-//creates delete variants for every word in the list
-//using usize for - https://stackoverflow.com/questions/29592256/whats-the-difference-between-usize-and-u32?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-fn get_all_variants<'a, T>(words: T, edit_distance: u64) -> Vec<(String, usize)> where T: Iterator<Item=&'a str> {
-    let mut word_variants = Vec::<(String, usize)>::new();
-
-    //treating &words as a slice, since, slices are read-only objects
-    for (i, word) in words.enumerate() {
-        word_variants.push((word.to_owned(), i));
-        let variants = get_variants(&word, edit_distance);
-        for j in variants.into_iter() {
-            word_variants.push((j, i));
-        }
-    }
-    word_variants.sort();
-    word_variants
-}
-
 #[inline(always)]
 fn get_variants<'a>(word: &str, edit_distance: u64) -> HashSet<String> {
     let mut variants: HashSet<String> = HashSet::new();
