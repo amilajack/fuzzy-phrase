@@ -8,10 +8,6 @@ set -eu -o pipefail
 
 export TMP=/tmp/fuzzy-phrase-bench
 export S3_DIR=s3://mapbox/playground/boblannon/fuzzy-phrase/bench
-export COMBINED_CSV="${TMP}/gb.csv"
-export COMBINED_GEOJSON="${TMP}/gb.geojson"
-export CSV_INSIDE="$(dirname $0)/mapbox-places-address/lib/csv-inside.js"
-
 
 function download() {
     type=$1
