@@ -9,6 +9,16 @@ set -eu -o pipefail
 export TMP=/tmp/fuzzy-phrase-bench
 export S3_DIR=s3://mapbox/playground/boblannon/fuzzy-phrase/bench
 
+
+#################################################################################
+# Download
+#
+# This downloads test data from s3 and extracts it.  Example:
+#
+#     ./scripts/bench.sh download phrase us en latn
+#
+# ...would download the benchmark data for `phrase/` benchmarks for United
+# States (us), in English (en), in Latin script (latn).
 function download() {
     type=$1
     country=$2
@@ -25,6 +35,16 @@ function download() {
     exit 0
 }
 
+#################################################################################
+# Run
+#
+# This runs benchmarks on a certain type and on certain data. The data is
+# presumed to exist in the local $TMP. Example:
+#
+#     ./scripts/bench.sh run phrase us en latn
+#
+# ...would run `cargo bench` using the benchmark data for `phrase/` benchmarks
+# for United States (us), in English (en), in Latin script (latn).
 function run() {
     type=$1
     country=$2
