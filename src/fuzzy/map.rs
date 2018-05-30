@@ -15,15 +15,23 @@ use rmps::{Deserializer, Serializer};
 use strsim::damerau_levenshtein;
 #[cfg(test)] extern crate reqwest;
 
-static BIG_NUMBER: usize = 1 << 30;
+static MULTI_FLAG: u64 = 1 << 63;
+static MULTI_MASK: u64 = !(1 << 63);
 
 pub struct FuzzyMap {
-    id_list: Vec<Vec<usize>>,
+    id_list: Vec<Vec<u32>>,
     fst: raw::Fst
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SerializableIdList(Vec<Vec<usize>>);
+pub struct SerializableIdList(Vec<Vec<u32>>);
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct FuzzyMapLookupResult {
+    pub word: String,
+    pub id: u32,
+    pub edit_distance: u8,
+}
 
 impl FuzzyMap {
     #[cfg(feature = "mmap")]
@@ -67,9 +75,9 @@ impl FuzzyMap {
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<u64> {
         self.fst.get(key).map(|output| output.value())
     }
-    //get rid of ids
-    pub fn lookup<'a, F>(&self, query: &str, edit_distance: u64, lookup_fn: F) -> Result<Vec<(String, u64)>, Box<Error>> where F: Fn(usize) -> &'a str {
-        let mut matches = Vec::<usize>::new();
+
+    pub fn lookup<'a, F>(&self, query: &str, edit_distance: u8, lookup_fn: F) -> Result<Vec<FuzzyMapLookupResult>, Box<Error>> where F: Fn(u32) -> &'a str {
+        let mut matches = Vec::<u32>::new();
 
         let variants = super::get_variants(&query, edit_distance);
 
@@ -77,13 +85,13 @@ impl FuzzyMap {
         for i in iter::once(query).chain(variants.iter().map(|a| a.as_str())) {
             match self.fst.get(&i) {
                 Some (idx) => {
-                    let uidx = idx.value() as usize;
-                    if uidx < BIG_NUMBER {
-                        matches.push(uidx);
-                    } else {
-                       for x in &(self.id_list)[uidx - BIG_NUMBER] {
-                            matches.push(*x);
+                    let uidx = idx.value();
+                    if uidx & MULTI_FLAG != 0 {
+                        for x in &(self.id_list)[(uidx & MULTI_MASK) as usize] {
+                            matches.push(*x as u32);
                         }
+                    } else {
+                        matches.push(uidx as u32);
                     }
                 }
                 None => {}
@@ -94,57 +102,63 @@ impl FuzzyMap {
 
         Ok(matches
             .into_iter().dedup()
-            .map(|id| (lookup_fn(id), id as u64))
-            .filter(|(word, _id)| damerau_levenshtein(query, word) <= edit_distance as usize)
-            .map(|(word, id)| (word.to_owned(), id))
-            .collect::<Vec<(String, u64)>>()
+            .filter_map(|id| {
+                let word = lookup_fn(id);
+                let distance = damerau_levenshtein(query, word);
+                if distance <= edit_distance as usize {
+                    Some(FuzzyMapLookupResult { word: word.to_owned(), id: id as u32, edit_distance: distance as u8 })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<FuzzyMapLookupResult>>()
         )
     }
 }
 
 pub struct FuzzyMapBuilder {
-    id_builder: Vec<Vec<usize>>,
+    id_builder: Vec<Vec<u32>>,
     builder: raw::Builder<BufWriter<File>>,
     file_path: PathBuf,
-    word_variants: Vec<(String, usize)>,
-    edit_distance: u64,
+    word_variants: Vec<(String, u32)>,
+    edit_distance: u8,
 }
 
 impl FuzzyMapBuilder {
-    pub fn new<P: AsRef<Path>>(path: P, edit_distance: u64) -> Result<Self, Box<Error>> {
+    pub fn new<P: AsRef<Path>>(path: P, edit_distance: u8) -> Result<Self, Box<Error>> {
         let file_start = path.as_ref().to_owned();
         let fst_wtr = BufWriter::new(fs::File::create(file_start.with_extension(".fst"))?);
 
         Ok(FuzzyMapBuilder {
             builder: raw::Builder::new_type(fst_wtr, 0)?,
-            id_builder: Vec::<Vec<usize>>::new(),
+            id_builder: Vec::<Vec<u32>>::new(),
             file_path: file_start,
-            word_variants: Vec::<(String, usize)>::new(),
+            word_variants: Vec::<(String, u32)>::new(),
             edit_distance: edit_distance,
         })
     }
 
-    pub fn build_from_iter<'a, T, P: AsRef<Path>>(path: P, words: T, edit_distance: u64) -> Result<(), Box<Error>> where T: Iterator<Item=&'a str> {
+    pub fn build_from_iter<'a, T, P: AsRef<Path>>(path: P, words: T, edit_distance: u8) -> Result<(), Box<Error>> where T: Iterator<Item=&'a str> {
         let mut fuzzy_map_builder = FuzzyMapBuilder::new(path, edit_distance)?;
 
         for (i, word) in words.enumerate() {
-            fuzzy_map_builder.insert(word, i as u64);
+            fuzzy_map_builder.insert(word, i as u32);
         }
         fuzzy_map_builder.finish()?;
         Ok(())
     }
 
-    pub fn insert(&mut self, key: &str, id: u64) -> () {
-        self.word_variants.push((key.to_owned(), id as usize));
+    pub fn insert(&mut self, key: &str, id: u32) -> () {
+        self.word_variants.push((key.to_owned(), id));
         let variants = super::get_variants(&key, self.edit_distance);
         for j in variants.into_iter() {
-            self.word_variants.push((j, id as usize));
+            self.word_variants.push((j, id));
         }
     }
 
     pub fn extend_iter<'a, T, I>(&mut self, iter: I) -> Result<(), FstError> where T: AsRef<[u8]>, I: IntoIterator<Item=&'a str> {
         for (i, word) in iter.into_iter().enumerate() {
-            self.insert(word, i as u64);
+            self.insert(word, i as u32);
         }
         Ok(())
     }
@@ -155,12 +169,12 @@ impl FuzzyMapBuilder {
         for (key, group) in &(&self.word_variants).iter().dedup().group_by(|t| &t.0) {
             let opts = group.collect::<Vec<_>>();
             let id = if opts.len() == 1 {
-                opts[0].1
+                opts[0].1 as u64
             } else {
                 self.id_builder.push((&opts).iter().map(|t| t.1).collect::<Vec<_>>());
-                self.id_builder.len() - 1 + BIG_NUMBER
+                (self.id_builder.len() - 1) as u64 | MULTI_FLAG
             };
-            self.builder.insert(key, id as u64)?;
+            self.builder.insert(key, id)?;
         }
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.with_extension(".msg"))?);
         SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)).unwrap();
@@ -247,54 +261,69 @@ mod tests {
         .text().expect("tried to decode the data");
         let mut words = data.trim().split("\n").collect::<Vec<&str>>();
         words.sort();
-        let no_return = Vec::<(String, u64)>::new();
+
+        let expect = |word: &'static str, query: &'static str| {
+            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: damerau_levenshtein(&word, &query) as u8 }
+        };
+
+        let no_return = Vec::<FuzzyMapLookupResult>::new();
 
         let dir = tempfile::tempdir().unwrap();
         let file_start = dir.path().join("fuzzy");
         FuzzyMapBuilder::build_from_iter(&file_start, words.iter().cloned(), 1).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
-        let query1 = "alazan";
-        let matches = map.lookup(&query1, 1, |id| &words[id]);
-        assert_eq!(matches.unwrap(), [("albazan".to_owned(), words.binary_search(&"albazan").unwrap() as u64)]);
+        let query = "alazan";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("albazan", query)]);
 
         //exact lookup, the original word in the data is - "agߪkaधaݤcݤkaqag"
-        let query2 = "agߪkaधaݤcݤkaqag";
-        let matches = map.lookup(&query2, 1, |id| &words[id]);
-        assert_eq!(matches.unwrap(), [("agߪkaधaݤcݤkaqag".to_owned(), words.binary_search(&"agߪkaधaݤcݤkaqag").unwrap() as u64)]);
+        let query = "agߪkaधaݤcݤkaqag";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("agߪkaधaݤcݤkaqag", query)]);
 
         //not exact lookup, the original word is - "blockquoteanciently", d=1
-        let query3 = "blockquteanciently";
-        let matches = map.lookup(&query3, 1, |id| &words[id]);
-        assert_eq!(matches.unwrap(), [("blockquoteanciently".to_owned(), words.binary_search(&"blockquoteanciently").unwrap() as u64)]);
+        let query = "blockquteanciently";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("blockquoteanciently", query)]);
 
         //not exact lookup, d=1, more more than one suggestion because of two similiar words in the data
         //albana and albazan
-        let query4 = "albaza";
-        let matches = map.lookup(&query4, 1, |id| &words[id]);
-        assert_eq!(matches.unwrap(), [("albana".to_owned(), words.binary_search(&"albana").unwrap() as u64), ("albazan".to_owned(), words.binary_search(&"albazan").unwrap() as u64)]);
+        let query = "albaza";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("albana", query), expect("albazan", query)]);
+
+        //include a test that explores multiple results that share an fst entry
+        let query = "fern";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("farn", query), expect("fernd", query), expect("ferni", query)]);
 
         //garbage input
-        let query4 = "🤔";
-        let matches = map.lookup(&query4, 1, |id| &words[id]);
+        let query = "🤔";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
         assert_eq!(matches.unwrap(), no_return);
 
-        let query5 = "";
-        let matches = map.lookup(&query5, 1, |id| &words[id]);
+        let query = "";
+        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
         assert_eq!(matches.unwrap(), no_return);
     }
-    #[test]
 
+    #[test]
     fn lookup_test_cases_d_2() {
         extern crate tempfile;
         let words = vec!["100", "main", "street"];
+
+        let expect = |word: &'static str, query: &'static str| {
+            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: damerau_levenshtein(&word, &query) as u8 }
+        };
+
         let dir = tempfile::tempdir().unwrap();
         let file_start = dir.path().join("fuzzy");
         FuzzyMapBuilder::build_from_iter(&file_start, words.iter().cloned(), 2).unwrap();
 
         let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
-        let query1 = "sret";
-        let matches = map.lookup(&query1, 2, |id| &words[id]);
-        assert_eq!(matches.unwrap(), [("street".to_owned(), words.binary_search(&"street").unwrap() as u64)])
+        let query = "sret";
+        let matches = map.lookup(&query, 2, |id| &words[id as usize]);
+        assert_eq!(matches.unwrap(), [expect("street", query)])
     }
 }
