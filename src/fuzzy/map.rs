@@ -2,6 +2,7 @@ use fst::{IntoStreamer, Streamer, Automaton};
 use std::fs;
 use std::iter;
 use std::error::Error;
+use std::cmp::Ordering;
 use itertools::Itertools;
 use fst::raw;
 use fst::Error as FstError;
@@ -31,6 +32,18 @@ pub struct FuzzyMapLookupResult {
     pub word: String,
     pub id: u32,
     pub edit_distance: u8,
+}
+
+impl Ord for FuzzyMapLookupResult {
+    fn cmp(&self, other: &FuzzyMapLookupResult) -> Ordering {
+        (self.edit_distance, self.id, &self.word).cmp(&(other.edit_distance, other.id, &other.word))
+    }
+}
+
+impl PartialOrd for FuzzyMapLookupResult {
+    fn partial_cmp(&self, other: &FuzzyMapLookupResult) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl FuzzyMap {
@@ -100,7 +113,7 @@ impl FuzzyMap {
         //return all ids that match
         matches.sort();
 
-        Ok(matches
+        let mut out = matches
             .into_iter().dedup()
             .filter_map(|id| {
                 let word = lookup_fn(id);
@@ -111,8 +124,9 @@ impl FuzzyMap {
                     None
                 }
             })
-            .collect::<Vec<FuzzyMapLookupResult>>()
-        )
+            .collect::<Vec<FuzzyMapLookupResult>>();
+        out.sort();
+        Ok(out)
     }
 }
 
