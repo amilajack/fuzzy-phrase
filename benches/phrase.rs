@@ -78,26 +78,46 @@ pub fn load_sample<'a>(file_loc: &str, word_to_id: &BTreeMap<String, u32>) -> (V
            let word_id = word_to_id.get(word).unwrap();
            word_ids.push(*word_id);
        }
+
+       // build full words out of the ids
        let query_words_full = word_ids.iter()
            .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
            .collect::<Vec<QueryWord>>();
 
-       let query_length = rng.gen_range(0, word_ids.len()-1);
-       let last_word = &words[query_length];
+       // select a random query length
+       let query_length = rng.gen_range(1, word_ids.len());
+       let last_word = &words[query_length-1];
+
+       // select a random length for the final word itself
        let prefix_length = rng.gen_range(1, last_word.len());
        let prefix = &last_word[..prefix_length];
+
+       // find the range of words that start with that prefix
        let mut prefix_range = word_to_id.range::<String, _>(prefix.to_string()..)
-           .take_while(|(&k, &v)| { k.starts_with(&prefix) });
-       let prefix_id_min = match prefix_range.next() {
-           Some((ref k, ref v)) => **v,
+           .take_while(|(k, v)| { k.starts_with(&prefix) });
+
+       // get the minimum id from that range
+       let (prefix_word_min, prefix_id_min) = match prefix_range.next() {
+           Some((ref k, ref v)) => (k.as_str(), **v),
            _ => panic!("Prefix '{:?}' has no match in word_to_id", prefix),
        };
-       let prefix_id_max = match prefix_range.last() {
-           Some((ref k, ref v)) => **v,
-           None => prefix_id_min
+
+       // get the maximum id from that range (or default to min == max)
+       let (prefix_word_max, prefix_id_max) = match prefix_range.last() {
+           Some((ref k, ref v)) => (k.as_str(), **v),
+           None => (prefix_word_min, prefix_id_min)
        };
 
-       let mut query_words_prefix = Vec::from(&query_words_full[..query_length]);
+       // println!("prefix '{}' range: [ {} ({}), {}({}) ]",
+       //          prefix, prefix_word_min, prefix_id_min, prefix_word_max, prefix_id_max);
+
+       let mut query_words_prefix: Vec<QueryWord> = Vec::new();
+
+       // if the length is at least 2, copy the full words from query_words_full
+       if query_length >= 2 {
+           query_words_prefix.extend_from_slice(&query_words_full[..query_length-2]);
+       }
+       // push a new prefix onto the end
        query_words_prefix.push(QueryWord::Prefix{ id_range: ( prefix_id_min, prefix_id_max) });
 
        sample_full.push(query_words_full);
@@ -131,8 +151,7 @@ pub fn benchmark(c: &mut Criterion) {
 
 
     let sample_loc = format!("{}_sample.txt", data_basename);
-    let (mut sample_full, mut sample_prefix) = load_sample(&sample_loc, &word_to_id);
-
+    let (sample_full, sample_prefix) = load_sample(&sample_loc, &word_to_id);
 
     // move the prebuilt data into a reference-counted struct
     let shared_data = Rc::new(BenchData { word_to_id, sample_full, sample_prefix, phrase_set });
