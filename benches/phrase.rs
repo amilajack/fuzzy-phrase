@@ -64,13 +64,59 @@ pub fn build_phrase_graph(file_loc: &str) -> (BTreeMap<String, u32>, PhraseSet) 
 }
 
 
+pub fn load_sample<'a>(file_loc: &str, word_to_id: &BTreeMap<String, u32>) -> (Vec<Vec<QueryWord>>, Vec<Vec<QueryWord>>) {
+    let f = File::open(file_loc).expect("tried to open_file");
+    let file_buf = BufReader::new(&f);
+    let mut rng = thread_rng();
+    let mut sample_full: Vec<Vec<QueryWord>> = vec![];
+    let mut sample_prefix: Vec<Vec<QueryWord>> = vec![];
+    for line in file_buf.lines() {
+       let s: String = line.unwrap();
+       let mut word_ids: Vec<u32> = vec![];
+       let words = tokenize(s.as_str());
+       for word in words.iter() {
+           let word_id = word_to_id.get(word).unwrap();
+           word_ids.push(*word_id);
+       }
+       let query_words_full = word_ids.iter()
+           .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+           .collect::<Vec<QueryWord>>();
+
+       let query_length = rng.gen_range(0, word_ids.len()-1);
+       let last_word = &words[query_length];
+       let prefix_length = rng.gen_range(1, last_word.len());
+       let prefix = &last_word[..prefix_length];
+       let mut prefix_range = word_to_id.range::<String, _>(prefix.to_string()..)
+           .take_while(|(&k, &v)| { k.starts_with(&prefix) });
+       let prefix_id_min = match prefix_range.next() {
+           Some((ref k, ref v)) => **v,
+           _ => panic!("Prefix '{:?}' has no match in word_to_id", prefix),
+       };
+       let prefix_id_max = match prefix_range.last() {
+           Some((ref k, ref v)) => **v,
+           None => prefix_id_min
+       };
+
+       let mut query_words_prefix = Vec::from(&query_words_full[..query_length]);
+       query_words_prefix.push(QueryWord::Prefix{ id_range: ( prefix_id_min, prefix_id_max) });
+
+       sample_full.push(query_words_full);
+       sample_prefix.push(query_words_prefix);
+    }
+    // we want to randomly sample so that we get lots of different results
+    rng.shuffle(&mut sample_full);
+    rng.shuffle(&mut sample_prefix);
+    return (sample_full, sample_prefix)
+}
+
 
 pub fn benchmark(c: &mut Criterion) {
     // the things I'm going to set up once and share across benchmarks are a list of words
     // and a built prefix set, so define a struct to contain them
     struct BenchData {
         word_to_id: BTreeMap<String, u32>,
-        sample: Vec<Vec<u32>>,
+        sample_full: Vec<Vec<QueryWord>>,
+        sample_prefix: Vec<Vec<QueryWord>>,
         phrase_set: PhraseSet
     };
     let data_basename = match env::var("PHRASE_BENCH") {
@@ -85,26 +131,11 @@ pub fn benchmark(c: &mut Criterion) {
 
 
     let sample_loc = format!("{}_sample.txt", data_basename);
-    let f = File::open(sample_loc).expect("tried to open_file");
-    let file_buf = BufReader::new(&f);
-    let mut sample: Vec<Vec<u32>> = vec![];
-    for line in file_buf.lines() {
-       let s: String = line.unwrap();
-       let mut word_ids: Vec<u32> = vec![];
-       let words = tokenize(s.as_str());
-       for word in words {
-           let word_id = word_to_id.get(&word).unwrap();
-           word_ids.push(*word_id);
-       }
-       sample.push(word_ids);
-    }
+    let (mut sample_full, mut sample_prefix) = load_sample(&sample_loc, &word_to_id);
 
-    // we want to randomly sample so that we get lots of different results
-    let mut rng = thread_rng();
-    rng.shuffle(&mut sample);
 
     // move the prebuilt data into a reference-counted struct
-    let shared_data = Rc::new(BenchData { word_to_id, sample, phrase_set });
+    let shared_data = Rc::new(BenchData { word_to_id, sample_full, sample_prefix, phrase_set });
 
     // make a vector I'm going to fill with closures to bench-test
     let mut to_bench = Vec::new();
@@ -117,14 +148,12 @@ pub fn benchmark(c: &mut Criterion) {
     let data = shared_data.clone();
 
     to_bench.push(Fun::new("exact_contains", move |b: &mut Bencher, _i| {
-        let mut cycle = data.sample.iter().cycle();
+        let mut cycle = data.sample_full.iter().cycle();
+
         // the closure based to b.iter is the thing that will actually be timed; everything before
         // that is untimed per-benchmark setup
         b.iter(|| {
-            let query_ids = cycle.next().unwrap();
-            let query_words = query_ids.iter()
-                .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
-                .collect::<Vec<QueryWord>>();
+            let query_words = cycle.next().unwrap();
             let query_phrase = QueryPhrase::new(&query_words).unwrap();
             let _result = data.phrase_set.contains(query_phrase).unwrap();
         });
@@ -134,59 +163,56 @@ pub fn benchmark(c: &mut Criterion) {
     // (again, same data, new reference, because it's an Rc)
     let data = shared_data.clone();
     to_bench.push(Fun::new("exact_contains_prefix", move |b: &mut Bencher, _i| {
-        let mut cycle = data.sample.iter().cycle();
+        let mut cycle = data.sample_full.iter().cycle();
 
         b.iter(|| {
-            let query_ids = cycle.next().unwrap();
-            let query_words = query_ids.iter()
-                .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
-                .collect::<Vec<QueryWord>>();
+            let query_words = cycle.next().unwrap();
             let query_phrase = QueryPhrase::new(&query_words).unwrap();
             let _result = data.phrase_set.contains_prefix(query_phrase).unwrap();
         });
     }));
 
-    // data is shadowed here for ease of copying and pasting, but this is a new clone
-    // (again, same data, new reference, because it's an Rc)
-    let data = shared_data.clone();
-    to_bench.push(Fun::new("range_contains_prefix", move |b: &mut Bencher, _i| {
-        let mut cycle = data.sample.iter().cycle();
+    // // data is shadowed here for ease of copying and pasting, but this is a new clone
+    // // (again, same data, new reference, because it's an Rc)
+    // let data = shared_data.clone();
+    // to_bench.push(Fun::new("range_contains_prefix", move |b: &mut Bencher, _i| {
+    //     let mut cycle = data.sample.iter().cycle();
 
-        b.iter(|| {
-            let word_ids = cycle.next().unwrap();
-            let fullword_ids = &word_ids[..word_ids.len()];
-            let last_id = &word_ids[word_ids.len()-1];
-            let last_id_min = 0.max(last_id - 50);
-            let last_id_max = last_id + 50;
-            let mut query_words = fullword_ids.iter()
-                .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
-                .collect::<Vec<QueryWord>>();
-            query_words.push(QueryWord::Prefix{ id_range: (last_id_min, last_id_max) });
-            let query_phrase = QueryPhrase::new(&query_words).unwrap();
-            let _result = data.phrase_set.contains_prefix(query_phrase).unwrap();
-        });
-    }));
+    //     b.iter(|| {
+    //         let word_ids = cycle.next().unwrap();
+    //         let fullword_ids = &word_ids[..word_ids.len()];
+    //         let last_id = &word_ids[word_ids.len()-1];
+    //         let last_id_min = 0.max(last_id - 50);
+    //         let last_id_max = last_id + 50;
+    //         let mut query_words = fullword_ids.iter()
+    //             .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+    //             .collect::<Vec<QueryWord>>();
+    //         query_words.push(QueryWord::Prefix{ id_range: (last_id_min, last_id_max) });
+    //         let query_phrase = QueryPhrase::new(&query_words).unwrap();
+    //         let _result = data.phrase_set.contains_prefix(query_phrase).unwrap();
+    //     });
+    // }));
 
-    // data is shadowed here for ease of copying and pasting, but this is a new clone
-    // (again, same data, new reference, because it's an Rc)
-    let data = shared_data.clone();
-    to_bench.push(Fun::new("range_fst_range", move |b: &mut Bencher, _i| {
-        let mut cycle = data.sample.iter().cycle();
+    // // data is shadowed here for ease of copying and pasting, but this is a new clone
+    // // (again, same data, new reference, because it's an Rc)
+    // let data = shared_data.clone();
+    // to_bench.push(Fun::new("range_fst_range", move |b: &mut Bencher, _i| {
+    //     let mut cycle = data.sample.iter().cycle();
 
-        b.iter(|| {
-            let word_ids = cycle.next().unwrap();
-            let fullword_ids = &word_ids[..word_ids.len()];
-            let last_id = &word_ids[word_ids.len()-1];
-            let last_id_min = 0.max(last_id - 50);
-            let last_id_max = last_id + 50;
-            let mut query_words = fullword_ids.iter()
-                .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
-                .collect::<Vec<QueryWord>>();
-            query_words.push(QueryWord::Prefix{ id_range: (last_id_min, last_id_max) });
-            let query_phrase = QueryPhrase::new(&query_words).unwrap();
-            let _result = data.phrase_set.range(query_phrase).unwrap();
-        });
-    }));
+    //     b.iter(|| {
+    //         let word_ids = cycle.next().unwrap();
+    //         let fullword_ids = &word_ids[..word_ids.len()];
+    //         let last_id = &word_ids[word_ids.len()-1];
+    //         let last_id_min = 0.max(last_id - 50);
+    //         let last_id_max = last_id + 50;
+    //         let mut query_words = fullword_ids.iter()
+    //             .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+    //             .collect::<Vec<QueryWord>>();
+    //         query_words.push(QueryWord::Prefix{ id_range: (last_id_min, last_id_max) });
+    //         let query_phrase = QueryPhrase::new(&query_words).unwrap();
+    //         let _result = data.phrase_set.range(query_phrase).unwrap();
+    //     });
+    // }));
 
     // run the accumulated list of benchmarks
     c.bench_functions("phrase", to_bench, ());
