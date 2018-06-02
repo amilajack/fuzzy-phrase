@@ -10,6 +10,9 @@ extern crate serde_derive;
 extern crate rmp_serde as rmps;
 extern crate serde_json;
 
+#[cfg(test)]
+#[macro_use] extern crate lazy_static;
+
 mod prefix;
 pub use prefix::PrefixSet;
 pub use prefix::PrefixSetBuilder;

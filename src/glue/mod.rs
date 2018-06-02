@@ -368,76 +368,112 @@ impl FuzzyPhraseSet {
 #[cfg(test)]
 mod tests {
     extern crate tempfile;
+    extern crate lazy_static;
 
     use super::*;
 
+    lazy_static! {
+        static ref DIR: tempfile::TempDir = tempfile::tempdir().unwrap();
+        static ref SET: FuzzyPhraseSet = {
+            let mut builder = FuzzyPhraseSetBuilder::new(&DIR.path()).unwrap();
+            builder.insert_str("100 main street").unwrap();
+            builder.insert_str("200 main street").unwrap();
+            builder.insert_str("100 main ave").unwrap();
+            builder.insert_str("300 mlk blvd").unwrap();
+            builder.finish().unwrap();
+
+            FuzzyPhraseSet::from_path(&DIR.path()).unwrap()
+        };
+    }
+
     #[test]
     fn glue_build() -> () {
-        let dir = tempfile::tempdir().unwrap();
+        lazy_static::initialize(&SET);
+    }
 
-        let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
-        builder.insert_str("100 main street").unwrap();
-        builder.insert_str("200 main street").unwrap();
-        builder.insert_str("100 main ave").unwrap();
-        builder.insert_str("300 mlk blvd").unwrap();
-        builder.finish().unwrap();
-
-        let set = FuzzyPhraseSet::from_path(&dir.path()).unwrap();
+    #[test]
+    fn glue_contains() -> () {
         // contains
-        assert!(set.contains_str("100 main street").unwrap());
-        assert!(set.contains_str("200 main street").unwrap());
-        assert!(set.contains_str("100 main ave").unwrap());
-        assert!(set.contains_str("300 mlk blvd").unwrap());
+        assert!(SET.contains_str("100 main street").unwrap());
+        assert!(SET.contains_str("200 main street").unwrap());
+        assert!(SET.contains_str("100 main ave").unwrap());
+        assert!(SET.contains_str("300 mlk blvd").unwrap());
+    }
 
-        assert!(!set.contains_str("x").unwrap());
-        assert!(!set.contains_str("100 main").unwrap());
-        assert!(!set.contains_str("100 main s").unwrap());
-        assert!(!set.contains_str("100 main streetr").unwrap());
-        assert!(!set.contains_str("100 main street r").unwrap());
-        assert!(!set.contains_str("100 main street ave").unwrap());
+    #[test]
+    fn glue_doesnt_contain() -> () {
+        assert!(!SET.contains_str("x").unwrap());
+        assert!(!SET.contains_str("100 main").unwrap());
+        assert!(!SET.contains_str("100 main s").unwrap());
+        assert!(!SET.contains_str("100 main streetr").unwrap());
+        assert!(!SET.contains_str("100 main street r").unwrap());
+        assert!(!SET.contains_str("100 main street ave").unwrap());
+    }
 
+    #[test]
+    fn glue_contains_prefix_exact() -> () {
         // contains prefix -- everything that works in full works as prefix
-        assert!(set.contains_prefix_str("100 main street").unwrap());
-        assert!(set.contains_prefix_str("200 main street").unwrap());
-        assert!(set.contains_prefix_str("100 main ave").unwrap());
-        assert!(set.contains_prefix_str("300 mlk blvd").unwrap());
+        assert!(SET.contains_prefix_str("100 main street").unwrap());
+        assert!(SET.contains_prefix_str("200 main street").unwrap());
+        assert!(SET.contains_prefix_str("100 main ave").unwrap());
+        assert!(SET.contains_prefix_str("300 mlk blvd").unwrap());
+    }
 
+    #[test]
+    fn glue_contains_prefix_partial_word() -> () {
         // contains prefix -- drop a letter
-        assert!(set.contains_prefix_str("100 main stree").unwrap());
-        assert!(set.contains_prefix_str("200 main stree").unwrap());
-        assert!(set.contains_prefix_str("100 main av").unwrap());
-        assert!(set.contains_prefix_str("300 mlk blv").unwrap());
+        assert!(SET.contains_prefix_str("100 main stree").unwrap());
+        assert!(SET.contains_prefix_str("200 main stree").unwrap());
+        assert!(SET.contains_prefix_str("100 main av").unwrap());
+        assert!(SET.contains_prefix_str("300 mlk blv").unwrap());
+    }
 
+    #[test]
+    fn glue_contains_prefix_dropped_word() -> () {
         // contains prefix -- drop a word
-        assert!(set.contains_prefix_str("100 main").unwrap());
-        assert!(set.contains_prefix_str("200 main").unwrap());
-        assert!(set.contains_prefix_str("100 main").unwrap());
-        assert!(set.contains_prefix_str("300 mlk").unwrap());
+        assert!(SET.contains_prefix_str("100 main").unwrap());
+        assert!(SET.contains_prefix_str("200 main").unwrap());
+        assert!(SET.contains_prefix_str("100 main").unwrap());
+        assert!(SET.contains_prefix_str("300 mlk").unwrap());
+    }
 
+    #[test]
+    fn glue_doesnt_contain_prefix() -> () {
+        // contains prefix -- drop a word
+        assert!(!SET.contains_prefix_str("100 man").unwrap());
+        assert!(!SET.contains_prefix_str("400 main").unwrap());
+        assert!(!SET.contains_prefix_str("100 main street x").unwrap());
+    }
+
+    #[test]
+    fn glue_fuzzy_match() -> () {
         assert_eq!(
-            set.fuzzy_match(&["100", "man", "street"], 1, 1).unwrap(),
+            SET.fuzzy_match(&["100", "man", "street"], 1, 1).unwrap(),
             vec![
                 FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 1 },
             ]
         );
 
         assert_eq!(
-            set.fuzzy_match(&["100", "man", "street"], 1, 2).unwrap(),
+            SET.fuzzy_match(&["100", "man", "street"], 1, 2).unwrap(),
             vec![
                 FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 1 },
                 FuzzyMatchResult { phrase: vec!["200".to_string(), "main".to_string(), "street".to_string()], edit_distance: 2 },
             ]
         );
+    }
 
+    #[test]
+    fn glue_fuzzy_match_prefix() -> () {
         assert_eq!(
-            set.fuzzy_match_prefix(&["100", "man"], 1, 1).unwrap(),
+            SET.fuzzy_match_prefix(&["100", "man"], 1, 1).unwrap(),
             vec![
                 FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string()], edit_distance: 1 },
             ]
         );
 
         assert_eq!(
-            set.fuzzy_match_prefix(&["100", "man", "str"], 1, 1).unwrap(),
+            SET.fuzzy_match_prefix(&["100", "man", "str"], 1, 1).unwrap(),
             vec![
                 FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "str".to_string()], edit_distance: 1 },
             ]
