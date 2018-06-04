@@ -85,12 +85,25 @@ pub fn load_sample<'a>(file_loc: &str, word_to_id: &BTreeMap<String, u32>) -> (V
            .collect::<Vec<QueryWord>>();
 
        // select a random query length
-       let query_length = rng.gen_range(1, word_ids.len());
+       let query_length;
+       if word_ids.len() > 1 {
+           query_length = rng.gen_range(1, word_ids.len());
+       } else {
+           query_length = 1;
+       }
        let last_word = &words[query_length-1];
 
-       // select a random length for the final word itself
-       let prefix_length = rng.gen_range(1, last_word.len());
-       let prefix = &last_word[..prefix_length];
+       // get all of the character boundaries after 0
+       let last_word_indices = last_word.char_indices().filter(|(i,c)| i > &0).map(|(i,c)| i).collect::<Vec<usize>>();
+       let prefix;
+       if last_word_indices.len() == 0 {
+           // word must be one char long: use the whole word
+           prefix = &last_word[..];
+       } else {
+           // select a random char boundary to truncate at
+           let prefix_truncate = rng.choose(&last_word_indices).unwrap();
+           prefix = &last_word[0..*prefix_truncate];
+       }
 
        // find the range of words that start with that prefix
        let mut prefix_range = word_to_id.range::<String, _>(prefix.to_string()..)
