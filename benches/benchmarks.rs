@@ -10,10 +10,11 @@ use criterion::Criterion;
 
 mod prefix;
 mod phrase;
+mod fuzzy;
 
 criterion_group!{
     name = benches;
     config = Criterion::default();
-    targets = prefix::benchmark, phrase::benchmark
+    targets = prefix::benchmark, phrase::benchmark, fuzzy::benchmark
 }
 criterion_main!(benches);

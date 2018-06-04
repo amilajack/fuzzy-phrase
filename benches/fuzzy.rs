@@ -1,16 +1,16 @@
 use criterion::{Criterion, Fun, Bencher};
 use reqwest;
-use self::map::FuzzyMap;
-use self::map::FuzzyMapBuilder;
+use fuzzy_phrase::fuzzy::map::FuzzyMap;
+use fuzzy_phrase::fuzzy::map::FuzzyMapBuilder;
 use fst::raw::Output;
 use std::rc::Rc;
 use itertools::Itertools;
 
 pub fn benchmark(c: &mut Criterion) {
-
+    extern crate tempfile;
     struct BenchData {
         words: Vec<String>,
-        fuzzy_map: fuzzyMap
+        fuzzy_map: FuzzyMap
     };
 
     // fetch data and build the structures
@@ -18,6 +18,9 @@ pub fn benchmark(c: &mut Criterion) {
             .expect("tried to download data")
             .text().expect("tried to decode the data");
     let words = wordlist.trim().split("\n").map(|w| w.to_owned()).collect::<Vec<String>>();
+
+    let dir = tempfile::tempdir().unwrap();
+    let file_start = dir.path().join("fuzzy");
     FuzzyMapBuilder::build_from_iter(&file_start, words.iter().cloned(), 2).unwrap();
     let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
     let shared_data = Rc::new(BenchData { words, map });
