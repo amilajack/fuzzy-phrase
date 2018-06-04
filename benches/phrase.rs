@@ -21,11 +21,11 @@ pub fn build_phrase_graph(file_loc: &str) -> (BTreeMap<String, u32>, PhraseSet) 
     // Build a vocabulary of the unique words in the test set
     let mut vocabulary = BTreeSet::new();
     for line in file_buf.lines() {
-       let s: String = line.unwrap();
-       let words = tokenize(s.as_str());
-       for word in words {
-           vocabulary.insert(word);
-       }
+        let s: String = line.unwrap();
+        let words = tokenize(s.as_str());
+        for word in words {
+            vocabulary.insert(word);
+        }
     }
 
     // Build a map from words to ids
@@ -39,14 +39,14 @@ pub fn build_phrase_graph(file_loc: &str) -> (BTreeMap<String, u32>, PhraseSet) 
     let file_buf = BufReader::new(&f);
     let mut phrases: Vec<Vec<u32>> = vec![];
     for line in file_buf.lines() {
-       let s: String = line.unwrap();
-       let mut word_ids: Vec<u32> = vec![];
-       let words = tokenize(s.as_str());
-       for word in words {
-           let word_id = word_to_id.get(&word).unwrap();
-           word_ids.push(*word_id);
-       }
-       phrases.push(word_ids);
+        let s: String = line.unwrap();
+        let mut word_ids: Vec<u32> = vec![];
+        let words = tokenize(s.as_str());
+        for word in words {
+            let word_id = word_to_id.get(&word).unwrap();
+            word_ids.push(*word_id);
+        }
+        phrases.push(word_ids);
     }
 
     phrases.sort();
@@ -68,73 +68,73 @@ pub fn load_sample<'a>(file_loc: &str, word_to_id: &BTreeMap<String, u32>) -> (V
     let f = File::open(file_loc).expect("tried to open_file");
     let file_buf = BufReader::new(&f);
     let mut rng = thread_rng();
-    let mut sample_full: Vec<Vec<QueryWord>> = vec![];
-    let mut sample_prefix: Vec<Vec<QueryWord>> = vec![];
+    let mut sample_full: Vec<Vec<QueryWord>> = Vec::new();
+    let mut sample_prefix: Vec<Vec<QueryWord>> = Vec::new();
     for line in file_buf.lines() {
-       let s: String = line.unwrap();
-       let mut word_ids: Vec<u32> = vec![];
-       let words = tokenize(s.as_str());
-       for word in words.iter() {
-           let word_id = word_to_id.get(word).unwrap();
-           word_ids.push(*word_id);
-       }
+        let s: String = line.unwrap();
+        let mut word_ids: Vec<u32> = vec![];
+        let words = tokenize(s.as_str());
+        for word in words.iter() {
+            let word_id = word_to_id.get(word).unwrap();
+            word_ids.push(*word_id);
+        }
 
-       // build full words out of the ids
-       let query_words_full = word_ids.iter()
-           .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
-           .collect::<Vec<QueryWord>>();
+        // build full words out of the ids
+        let query_words_full = word_ids.iter()
+            .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+            .collect::<Vec<QueryWord>>();
 
-       // select a random query length
-       let query_length;
-       if word_ids.len() > 1 {
-           query_length = rng.gen_range(1, word_ids.len());
-       } else {
-           query_length = 1;
-       }
-       let last_word = &words[query_length-1];
+        // select a random query length
+        let query_length;
+        if word_ids.len() > 1 {
+            query_length = rng.gen_range(1, word_ids.len());
+        } else {
+            query_length = 1;
+        }
+        let last_word = &words[query_length-1];
 
-       // get all of the character boundaries after 0
-       let last_word_indices = last_word.char_indices().filter(|(i,c)| i > &0).map(|(i,c)| i).collect::<Vec<usize>>();
-       let prefix;
-       if last_word_indices.len() == 0 {
-           // word must be one char long: use the whole word
-           prefix = &last_word[..];
-       } else {
-           // select a random char boundary to truncate at
-           let prefix_truncate = rng.choose(&last_word_indices).unwrap();
-           prefix = &last_word[0..*prefix_truncate];
-       }
+        // get all of the character boundaries after 0
+        let last_word_indices = last_word.char_indices().filter(|(i, _c)| i > &0).map(|(i, _c)| i).collect::<Vec<usize>>();
+        let prefix;
+        if last_word_indices.len() == 0 {
+            // word must be one char long: use the whole word
+            prefix = &last_word[..];
+        } else {
+            // select a random char boundary to truncate at
+            let prefix_truncate = rng.choose(&last_word_indices).unwrap();
+            prefix = &last_word[0..*prefix_truncate];
+        }
 
-       // find the range of words that start with that prefix
-       let mut prefix_range = word_to_id.range::<String, _>(prefix.to_string()..)
-           .take_while(|(k, v)| { k.starts_with(&prefix) });
+        // find the range of words that start with that prefix
+        let mut prefix_range = word_to_id.range::<String, _>(prefix.to_string()..)
+            .take_while(|(k, _v)| { k.starts_with(&prefix) });
 
-       // get the minimum id from that range
-       let (prefix_word_min, prefix_id_min) = match prefix_range.next() {
-           Some((ref k, ref v)) => (k.as_str(), **v),
-           _ => panic!("Prefix '{:?}' has no match in word_to_id", prefix),
-       };
+        // get the minimum id from that range
+        let (prefix_word_min, prefix_id_min) = match prefix_range.next() {
+            Some((ref k, ref v)) => (k.as_str(), **v),
+            _ => panic!("Prefix '{:?}' has no match in word_to_id", prefix),
+        };
 
-       // get the maximum id from that range (or default to min == max)
-       let (prefix_word_max, prefix_id_max) = match prefix_range.last() {
-           Some((ref k, ref v)) => (k.as_str(), **v),
-           None => (prefix_word_min, prefix_id_min)
-       };
+        // get the maximum id from that range (or default to min == max)
+        let (_prefix_word_max, prefix_id_max) = match prefix_range.last() {
+            Some((ref k, ref v)) => (k.as_str(), **v),
+            None => (prefix_word_min, prefix_id_min)
+        };
 
-       // println!("prefix '{}' range: [ {} ({}), {}({}) ]",
-       //          prefix, prefix_word_min, prefix_id_min, prefix_word_max, prefix_id_max);
+        // println!("prefix '{}' range: [ {} ({}), {}({}) ]",
+        //          prefix, prefix_word_min, prefix_id_min, prefix_word_max, prefix_id_max);
 
-       let mut query_words_prefix: Vec<QueryWord> = Vec::new();
+        let mut query_words_prefix: Vec<QueryWord> = Vec::new();
 
-       // if the length is at least 2, copy the full words from query_words_full
-       if query_length >= 2 {
-           query_words_prefix.extend_from_slice(&query_words_full[..query_length-2]);
-       }
-       // push a new prefix onto the end
-       query_words_prefix.push(QueryWord::Prefix{ id_range: ( prefix_id_min, prefix_id_max) });
+        // if the length is at least 2, copy the full words from query_words_full
+        if query_length >= 2 {
+            query_words_prefix.extend_from_slice(&query_words_full[..query_length-2]);
+        }
+        // push a new prefix onto the end
+        query_words_prefix.push(QueryWord::Prefix{ id_range: ( prefix_id_min, prefix_id_max) });
 
-       sample_full.push(query_words_full);
-       sample_prefix.push(query_words_prefix);
+        sample_full.push(query_words_full);
+        sample_prefix.push(query_words_prefix);
     }
     // we want to randomly sample so that we get lots of different results
     rng.shuffle(&mut sample_full);
