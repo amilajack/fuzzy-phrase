@@ -240,7 +240,6 @@ impl FuzzyPhraseSet {
             if fuzzy_results.len() == 0 {
                 return Ok(Vec::new());
             } else {
-                fuzzy_results.truncate(5);
                 let mut variants: Vec<QueryWord> = Vec::with_capacity(fuzzy_results.len());
                 for result in fuzzy_results {
                     variants.push(QueryWord::Full { id: result.id, edit_distance: result.edit_distance });
@@ -270,6 +269,11 @@ impl FuzzyPhraseSet {
         Ok(results)
     }
 
+    pub fn fuzzy_match_str(&self, phrase: &str, max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+        let phrase_v: Vec<&str> = phrase.split(' ').collect();
+        self.fuzzy_match(&phrase_v, max_word_dist, max_phrase_dist)
+    }
+
     pub fn fuzzy_match_prefix(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
         let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
 
@@ -291,7 +295,6 @@ impl FuzzyPhraseSet {
             if fuzzy_results.len() == 0 {
                 return Ok(Vec::new());
             } else {
-                fuzzy_results.truncate(5);
                 let mut variants: Vec<QueryWord> = Vec::with_capacity(fuzzy_results.len());
                 for result in fuzzy_results {
                     variants.push(QueryWord::Full { id: result.id, edit_distance: result.edit_distance });
@@ -306,8 +309,7 @@ impl FuzzyPhraseSet {
             Some((word_id_start, word_id_end)) => { last_variants.push(QueryWord::Prefix { id_range: (word_id_start.value() as u32, word_id_end.value() as u32) }) },
             None => { }
         }
-        let mut last_fuzzy_results = self.fuzzy_map.lookup(&phrase[last_idx], edit_distance, |id| &self.word_list[id as usize])?;
-        last_fuzzy_results.truncate(5);
+        let last_fuzzy_results = self.fuzzy_map.lookup(&phrase[last_idx], edit_distance, |id| &self.word_list[id as usize])?;
         for result in last_fuzzy_results {
             last_variants.push(QueryWord::Full { id: result.id, edit_distance: result.edit_distance });
         }
@@ -316,11 +318,13 @@ impl FuzzyPhraseSet {
             return Ok(Vec::new());
         }
         word_possibilities.push(last_variants);
+        println!("wp {:?}", &word_possibilities);
 
         let phrase_possibilities = self.get_combinations(word_possibilities, max_phrase_dist);
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
         for phrase_p in &phrase_possibilities {
+            println!("pp {:?}", phrase_p);
             if self.phrase_set.contains_prefix(QueryPhrase::new(phrase_p)?)? {
                 results.push(FuzzyMatchResult {
                     phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
@@ -336,6 +340,11 @@ impl FuzzyPhraseSet {
         }
 
         Ok(results)
+    }
+
+    pub fn fuzzy_match_prefix_str(&self, phrase: &str, max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+        let phrase_v: Vec<&str> = phrase.split(' ').collect();
+        self.fuzzy_match_prefix(&phrase_v, max_word_dist, max_phrase_dist)
     }
 
     fn get_combinations(&self, word_possibilities: Vec<Vec<QueryWord>>, max_phrase_dist: u8) -> Vec<Vec<QueryWord>> {
@@ -480,3 +489,5 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)] mod fuzz_tests;

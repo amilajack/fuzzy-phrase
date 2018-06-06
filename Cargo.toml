@@ -23,6 +23,7 @@ criterion = "0.2"
 tempfile = "3.0.2"
 rand = "0.5.0"
 lazy_static = "1.0"
+libflate = "0.1.11"
 
 [features]
 default = ["mmap"]
