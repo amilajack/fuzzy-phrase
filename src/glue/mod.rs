@@ -318,13 +318,11 @@ impl FuzzyPhraseSet {
             return Ok(Vec::new());
         }
         word_possibilities.push(last_variants);
-        println!("wp {:?}", &word_possibilities);
 
         let phrase_possibilities = self.get_combinations(word_possibilities, max_phrase_dist);
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
         for phrase_p in &phrase_possibilities {
-            println!("pp {:?}", phrase_p);
             if self.phrase_set.contains_prefix(QueryPhrase::new(phrase_p)?)? {
                 results.push(FuzzyMatchResult {
                     phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {

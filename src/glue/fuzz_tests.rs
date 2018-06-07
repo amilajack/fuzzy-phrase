@@ -201,10 +201,7 @@ fn glue_fuzztest_match() {
     for _i in 0..50 {
         let phrase = rng.choose(&PHRASES).unwrap();
         let damaged = get_damaged_phrase(phrase);
-        println!("{}", phrase);
-        println!("{}", &damaged);
         let results = SET.fuzzy_match_str(&damaged.as_str(), 1, 1);
-        println!("{:?}", &results);
 
         assert!(results.is_ok());
         if let Ok(res) = results {
@@ -220,30 +217,11 @@ fn glue_fuzztest_match_prefix() {
     for _i in 0..50 {
         let phrase = rng.choose(&PHRASES).unwrap();
         let damaged = get_damaged_prefix(phrase);
-        println!("{}", phrase);
-        println!("{}", &damaged);
         let results = SET.fuzzy_match_prefix_str(&damaged.as_str(), 1, 1);
-        println!("{:?}", &results);
 
         assert!(results.is_ok());
         if let Ok(res) = results {
             assert!(res.iter().filter(|result| phrase.starts_with(itertools::join(&result.phrase, " ").as_str())).count() > 0);
         }
-    }
-}
-
-#[test]
-#[ignore]
-fn glue_fuzztest_specific() {
-    let phrase = "67# Trehaven Rd NW";
-    let damaged = "w7# Treh";
-    println!("{}", &phrase);
-    println!("{}", &damaged);
-    let results = SET.fuzzy_match_prefix_str(damaged, 1, 1);
-    println!("{:?}", &results);
-
-    assert!(results.is_ok());
-    if let Ok(res) = results {
-        assert!(res.iter().filter(|result| phrase.starts_with(itertools::join(&result.phrase, " ").as_str())).count() > 0);
     }
 }
