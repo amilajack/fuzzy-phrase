@@ -51,6 +51,13 @@ impl FuzzyPhraseSetBuilder {
     }
 
     pub fn insert(&mut self, phrase: &[&str]) -> Result<(), Box<Error>> {
+        // the strategy here is to take a phrase, look at it word by word, and for any words we've
+        // seen before, reuse their temp IDs, otherwise, add new words to our word map and assign them
+        // new temp IDs (just autoincrementing in the order we see them) -- later once we've seen all
+        // the words we'll renumber them lexicographically
+        //
+        // and then we're going to add the actual phrase, represented number-wise, to our phrase list
+
         let mut tmpid_phrase: Vec<u32> = Vec::with_capacity(phrase.len());
         for word in phrase {
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
@@ -142,6 +149,10 @@ pub struct FuzzyMatchResult {
 
 impl FuzzyPhraseSet {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
+        // the path of a fuzzy phrase set is a directory that has all the subcomponents in it at predictable URLs
+        // the prefix graph and phrase graph are each single-file FSTs; the fuzzy graph is multiple files so we
+        // pass in a their shared prefix to the fuzzy graph constructor
+        // we also have a config file that has version info (with metadata about the index contents to come)
         let directory = path.as_ref();
 
         if !directory.exists() || !directory.is_dir() {
@@ -160,6 +171,11 @@ impl FuzzyPhraseSet {
         }
         let prefix_set = unsafe { PrefixSet::from_path(&prefix_path) }?;
 
+        // the fuzzy graph needs to be able to go from ID to actual word
+        // one idea was to look this up from the prefix graph, which can do backwards lookups
+        // (id to string), but this turned out to be too slow, so instead we'll just hold
+        // an array of all the words in memory, which turns out to be small enough to just do.
+        // we can get this by iterating over the prefix graph contents and exploding them into a vector
         let mut word_list = Vec::<String>::with_capacity(prefix_set.len());
         {
             let mut stream = prefix_set.stream();
@@ -181,6 +197,8 @@ impl FuzzyPhraseSet {
     }
 
     pub fn contains(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
+        // strategy: get each word's ID from the prefix graph (or return false if any are missing)
+        // and then look up that ID sequence in the phrase graph
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         for word in phrase {
             match self.prefix_set.get(&word) {
@@ -200,6 +218,9 @@ impl FuzzyPhraseSet {
     }
 
     pub fn contains_prefix(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
+        // strategy: get each word's ID from the prefix graph (or return false if any are missing)
+        // except for the last one; do a word prefix lookup instead and construct a prefix range
+        // and then look up that sequence with a prefix lookup in the phrase graph
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         if phrase.len() > 0 {
             let last_idx = phrase.len() - 1;
@@ -226,6 +247,10 @@ impl FuzzyPhraseSet {
     }
 
     pub fn fuzzy_match(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+        // strategy: look up each word in the fuzzy graph
+        // and then construct a vector of vectors representing all the word variants that could reside in each slot
+        // in the phrase, and then recursively enumerate every combination of variants and look them each up in the phrase graph
+
         let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
 
         // later we should preserve the max edit distance we can support with the structure we have built
@@ -275,6 +300,10 @@ impl FuzzyPhraseSet {
     }
 
     pub fn fuzzy_match_prefix(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+        // strategy: look up each word in the fuzzy graph, and also look up the last one in the prefix graph
+        // and then construct a vector of vectors representing all the word variants that could reside in each slot
+        // in the phrase, and then recursively enumerate every combination of variants and look them each up in the phrase graph
+
         let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
 
         if phrase.len() == 0 {
@@ -346,6 +375,8 @@ impl FuzzyPhraseSet {
     }
 
     fn get_combinations(&self, word_possibilities: Vec<Vec<QueryWord>>, max_phrase_dist: u8) -> Vec<Vec<QueryWord>> {
+        // this function recursively combines word variants to enumerate their possible combinations
+
         fn recursive_search(possibilities: &Vec<Vec<QueryWord>>, position: usize, budget_remaining: u8, so_far: Vec<QueryWord>) -> Vec<Vec<QueryWord>> {
             let mut out: Vec<Vec<QueryWord>> = Vec::new();
             for word in possibilities[position].iter() {
