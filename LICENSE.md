@@ -1,6 +1,8 @@
 Copyright (c) 2018, Mapbox
 All rights reserved.
 
+Except where noted, the source code in this repository is licensed as follows:
+
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
 
@@ -21,3 +23,9 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Contains code modified from https://github.com/servo/unicode-script/blob/master/src/tables.rs
+Modified and original versions available under the Apache License, Version 2.0
+<LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
+license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your option, see
+in-code comments for details.

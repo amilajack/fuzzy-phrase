@@ -1,5 +1,7 @@
-// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
-// file at http://rust-lang.org/COPYRIGHT.
+// Modifications Copyright 2018 Mapbox, Inc., available under same licenses as original.
+// Original file Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
+// file at https://github.com/servo/unicode-script/blob/master/COPYRIGHT and at
+// http://rust-lang.org/COPYRIGHT.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
