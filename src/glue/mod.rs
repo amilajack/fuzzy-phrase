@@ -13,6 +13,8 @@ use ::phrase::{PhraseSet, PhraseSetBuilder};
 use ::phrase::query::{QueryPhrase, QueryWord};
 use ::fuzzy::{FuzzyMap, FuzzyMapBuilder};
 
+pub mod unicode_ranges;
+
 #[derive(Default, Debug)]
 pub struct FuzzyPhraseSetBuilder {
     phrases: Vec<Vec<u32>>,
