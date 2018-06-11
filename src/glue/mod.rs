@@ -50,7 +50,7 @@ impl FuzzyPhraseSetBuilder {
         Ok(FuzzyPhraseSetBuilder { directory, ..Default::default() })
     }
 
-    pub fn insert(&mut self, phrase: &[&str]) -> Result<(), Box<Error>> {
+    pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T]) -> Result<(), Box<Error>> {
         // the strategy here is to take a phrase, look at it word by word, and for any words we've
         // seen before, reuse their temp IDs, otherwise, add new words to our word map and assign them
         // new temp IDs (just autoincrementing in the order we see them) -- later once we've seen all
@@ -60,6 +60,7 @@ impl FuzzyPhraseSetBuilder {
 
         let mut tmpid_phrase: Vec<u32> = Vec::with_capacity(phrase.len());
         for word in phrase {
+            let word = word.as_ref();
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
             // but absent https://github.com/rust-lang/rfcs/pull/1769 , avoiding it requires a huge amount of hoop-jumping
             let string_word = word.to_string();
@@ -196,12 +197,12 @@ impl FuzzyPhraseSet {
         Ok(FuzzyPhraseSet { prefix_set, phrase_set, fuzzy_map, word_list })
     }
 
-    pub fn contains(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
+    pub fn contains<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, Box<Error>> {
         // strategy: get each word's ID from the prefix graph (or return false if any are missing)
         // and then look up that ID sequence in the phrase graph
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         for word in phrase {
-            match self.prefix_set.get(&word) {
+            match self.prefix_set.get(word.as_ref()) {
                 Some(word_id) => { id_phrase.push(QueryWord::Full { id: word_id as u32, edit_distance: 0 }) },
                 None => { return Ok(false) }
             }
@@ -217,7 +218,7 @@ impl FuzzyPhraseSet {
         self.contains(&phrase_v)
     }
 
-    pub fn contains_prefix(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
+    pub fn contains_prefix<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, Box<Error>> {
         // strategy: get each word's ID from the prefix graph (or return false if any are missing)
         // except for the last one; do a word prefix lookup instead and construct a prefix range
         // and then look up that sequence with a prefix lookup in the phrase graph
@@ -225,12 +226,12 @@ impl FuzzyPhraseSet {
         if phrase.len() > 0 {
             let last_idx = phrase.len() - 1;
             for word in phrase[..last_idx].iter() {
-                match self.prefix_set.get(&word) {
+                match self.prefix_set.get(word.as_ref()) {
                     Some(word_id) => { id_phrase.push(QueryWord::Full { id: word_id as u32, edit_distance: 0 }) },
                     None => { return Ok(false) }
                 }
             }
-            match self.prefix_set.get_prefix_range(&phrase[last_idx]) {
+            match self.prefix_set.get_prefix_range(phrase[last_idx].as_ref()) {
                 Some((word_id_start, word_id_end)) => { id_phrase.push(QueryWord::Prefix { id_range: (word_id_start.value() as u32, word_id_end.value() as u32) }) },
                 None => { return Ok(false) }
             }
@@ -246,7 +247,7 @@ impl FuzzyPhraseSet {
         self.contains_prefix(&phrase_v)
     }
 
-    pub fn fuzzy_match(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+    pub fn fuzzy_match<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
         // strategy: look up each word in the fuzzy graph
         // and then construct a vector of vectors representing all the word variants that could reside in each slot
         // in the phrase, and then recursively enumerate every combination of variants and look them each up in the phrase graph
@@ -259,6 +260,7 @@ impl FuzzyPhraseSet {
         let edit_distance = min(max_word_dist, 1);
 
         for word in phrase {
+            let word = word.as_ref();
             let mut fuzzy_results = self.fuzzy_map.lookup(&word, edit_distance, |id| &self.word_list[id as usize])?;
             // we should have a better way to decide what we keep; this will be edit distance
             // first and then first by ID (so, first lexicographically)
@@ -299,7 +301,7 @@ impl FuzzyPhraseSet {
         self.fuzzy_match(&phrase_v, max_word_dist, max_phrase_dist)
     }
 
-    pub fn fuzzy_match_prefix(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+    pub fn fuzzy_match_prefix<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
         // strategy: look up each word in the fuzzy graph, and also look up the last one in the prefix graph
         // and then construct a vector of vectors representing all the word variants that could reside in each slot
         // in the phrase, and then recursively enumerate every combination of variants and look them each up in the phrase graph
@@ -318,6 +320,7 @@ impl FuzzyPhraseSet {
         // all words but the last one: fuzzy-lookup, and return nothing if that fails
         let last_idx = phrase.len() - 1;
         for word in phrase[..last_idx].iter() {
+            let word = word.as_ref();
             let mut fuzzy_results = self.fuzzy_map.lookup(&word, edit_distance, |id| &self.word_list[id as usize])?;
             // we should have a better way to decide what we keep; this will be edit distance
             // first and then first by ID (so, first lexicographically)
@@ -334,11 +337,11 @@ impl FuzzyPhraseSet {
 
         // last one: try both prefix and fuzzy lookup, and return nothing if both fail
         let mut last_variants: Vec<QueryWord> = Vec::new();
-        match self.prefix_set.get_prefix_range(&phrase[last_idx]) {
+        match self.prefix_set.get_prefix_range(phrase[last_idx].as_ref()) {
             Some((word_id_start, word_id_end)) => { last_variants.push(QueryWord::Prefix { id_range: (word_id_start.value() as u32, word_id_end.value() as u32) }) },
             None => { }
         }
-        let last_fuzzy_results = self.fuzzy_map.lookup(&phrase[last_idx], edit_distance, |id| &self.word_list[id as usize])?;
+        let last_fuzzy_results = self.fuzzy_map.lookup(phrase[last_idx].as_ref(), edit_distance, |id| &self.word_list[id as usize])?;
         for result in last_fuzzy_results {
             last_variants.push(QueryWord::Full { id: result.id, edit_distance: result.edit_distance });
         }
@@ -356,7 +359,7 @@ impl FuzzyPhraseSet {
                 results.push(FuzzyMatchResult {
                     phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
                         QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
-                        QueryWord::Prefix { .. } => phrase[i].to_owned(),
+                        QueryWord::Prefix { .. } => phrase[i].as_ref().to_owned(),
                     }).collect::<Vec<String>>(),
                     edit_distance: phrase_p.iter().map(|qw| match qw {
                         QueryWord::Full { edit_distance, .. } => *edit_distance,
@@ -436,6 +439,20 @@ mod tests {
         assert!(SET.contains_str("200 main street").unwrap());
         assert!(SET.contains_str("100 main ave").unwrap());
         assert!(SET.contains_str("300 mlk blvd").unwrap());
+    }
+
+    #[test]
+    fn glue_test_asref() -> () {
+        // test that we're generic over vectors and arrays, and also Strings and strs
+        // testing this for contains because it's simplest, but we reuse this pattern elsewhere,
+        // e.g., for insert
+        assert!(SET.contains_str("100 main street").unwrap());
+        let phrase_static = ["100", "main", "street"];
+        assert!(SET.contains(&phrase_static).unwrap());
+        let phrase_vec: Vec<String> = vec!["100".to_string(), "main".to_string(), "street".to_string()];
+        assert!(SET.contains(&phrase_vec).unwrap());
+        let ref_phrase_vec: Vec<&str> = phrase_vec.iter().map(|s| s.as_str()).collect();
+        assert!(SET.contains(&ref_phrase_vec).unwrap());
     }
 
     #[test]
