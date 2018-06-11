@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod tables;
-use self::tables::{Script, script_table};
+use self::tables::script_table;
+pub use self::tables::Script;
 
 use std::collections::HashMap;
 
