@@ -132,27 +132,39 @@ pub fn random_trunc(word: &str) -> String {
     word[..pos].to_owned()
 }
 
-pub fn get_damaged_phrase(phrase: &str) -> String {
+pub fn get_damaged_phrase<F>(phrase: &str, can_damage: F) -> String where
+    F: Fn(&str) -> bool {
     let mut rng = rand::thread_rng();
 
     let words = phrase.split(' ').collect::<Vec<_>>();
-    let idx = rng.gen_range(0, words.len());
-    let damaged = damage_word(words[idx]);
-    let new_words = words.iter().enumerate().map(|(i, w)| if idx == i { damaged.as_str() } else { *w }).collect::<Vec<&str>>();
+
+    let eligible_idxs = &words.iter().enumerate().filter_map(|(i, w)| if can_damage(w) { Some(i) } else { None }).collect::<Vec<_>>();
+
+    let (damage_idx, damaged_word) = if eligible_idxs.len() > 0 {
+        let i = rng.choose(eligible_idxs).unwrap();
+        (*i, damage_word(words[*i]))
+    } else {
+        (words.len() + 1, "".to_string())
+    };
+
+    let new_words = words.iter().enumerate().map(|(i, w)| if damage_idx == i { damaged_word.as_str() } else { *w }).collect::<Vec<&str>>();
     itertools::join(new_words, " ")
 }
 
-pub fn get_damaged_prefix(phrase: &str) -> String {
+pub fn get_damaged_prefix<F>(phrase: &str, can_damage: F) -> String where
+    F: Fn(&str) -> bool {
     let mut rng = rand::thread_rng();
 
     let words = phrase.split(' ').collect::<Vec<_>>();
     let trunc_idx = rng.gen_range(0, words.len());
     let trunc_word = random_trunc(&words[trunc_idx]);
 
-    let (damage_idx, damaged_word) = if trunc_idx > 0 {
+    let eligible_idxs = &words.iter().enumerate().filter_map(|(i, w)| if i < trunc_idx && can_damage(w) { Some(i) } else { None }).collect::<Vec<_>>();
+
+    let (damage_idx, damaged_word) = if eligible_idxs.len() > 0 {
         // damage some word before the truncation word
-        let i = rng.gen_range(0, trunc_idx);
-        (i, damage_word(words[i]))
+        let i = rng.choose(eligible_idxs).unwrap();
+        (*i, damage_word(words[*i]))
     } else {
         // if we're truncating the first word, there aren't any to break, so set a high idx we
         // won't actually reach in the map

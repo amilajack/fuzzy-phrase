@@ -46,7 +46,7 @@ fn glue_fuzztest_match() {
     let mut rng = rand::thread_rng();
     for _i in 0..500 {
         let phrase = rng.choose(&PHRASES).unwrap();
-        let damaged = get_damaged_phrase(phrase);
+        let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w));
         let results = SET.fuzzy_match_str(&damaged.as_str(), 1, 1);
 
         assert!(results.is_ok());
@@ -62,7 +62,7 @@ fn glue_fuzztest_match_prefix() {
     let mut rng = rand::thread_rng();
     for _i in 0..500 {
         let phrase = rng.choose(&PHRASES).unwrap();
-        let damaged = get_damaged_prefix(phrase);
+        let damaged = get_damaged_prefix(phrase, |w| SET.can_fuzzy_match(w));
         let results = SET.fuzzy_match_prefix_str(&damaged.as_str(), 1, 1);
 
         assert!(results.is_ok());
