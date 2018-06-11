@@ -8,6 +8,7 @@ set -eu -o pipefail
 
 export TMP=/tmp/fuzzy-phrase-bench
 export S3_DIR=s3://mapbox/playground/boblannon/fuzzy-phrase/bench
+export S3_FUZZY_DIR=s3://mapbox/playground/aarthykc/fuzzy
 
 
 #################################################################################
@@ -45,6 +46,19 @@ function download() {
     exit 0
 }
 
+function download_fuzzy() {
+    edit_distance=$1
+    fname="fuzzy_${edit_distance}.txt"
+
+    mkdir -p "${TMP}/fuzzy"
+
+    FROM="${S3_FUZZY_DIR}/${fname}"
+    TO="${TMP}/fuzzy/${fname}"
+    echo "Downloading ${FROM}"
+    aws s3 cp $FROM $TO
+    exit 0
+}
+
 #################################################################################
 # Run
 #
@@ -67,6 +81,15 @@ function run() {
     exit 0
 }
 
+function run_fuzzy() {
+    edit_distance=$1
+    # this will be used to create filenames ${fbasename}.txt and ${fbasename}_sample.txt
+    fbasename="fuzzy/fuzzy_${edit_distance}"
+    echo "running"
+    env FUZZY_BENCH="${TMP}/${fbasename}" cargo bench -v "fuzzy"
+    exit 0
+}
+
 # remove tmp dir
 function clean() {
     if [[ -d $TMP ]]; then
@@ -82,8 +105,10 @@ function clean() {
 VERB=$1
 
 case $VERB in
-    download)   download $2 $3 $4 $5;;
+    download)  download $2 $3 $4 $5;;
+    download_fuzzy) download_fuzzy $2;;
     run)        run $2 $3 $4 $5;;
+    run_fuzzy)  run_fuzzy $2;;
     clean)      clean;;
     *)          echo "not ok - invalid command" && exit 3;;
 esac
