@@ -1,4 +1,5 @@
 use super::util;
+use fst::Automaton;
 
 /// An abstraction over full words and prefixes.
 #[derive(Copy, Clone)]
@@ -161,6 +162,117 @@ impl<'a> IntoIterator for &'a QueryPhrase<'a> {
         QueryPhraseIterator{ phrase: self, offset: 0 }
     }
 }
+
+
+pub struct QueryLattice {
+    variants: Vec<Vec<QueryWord>>
+}
+
+pub struct QueryLatticeState {
+    phrase_position: usize,
+    word_position: usize,
+    possible_words: Vec<QueryWord>,
+}
+
+impl QueryLattice {
+    pub fn new(variants: Vec<Vec<QueryWord>>) -> Self {
+         QueryLattice{ variants }
+    }
+}
+
+impl Automaton for QueryLattice {
+    type State = Option<QueryLatticeState>;
+
+    fn start(&self) -> Option<QueryLatticeState> {
+        // start the automaton in the first position and with the full list of variants in that
+        // position
+        let phrase_position = 0;
+        let word_position = 0;
+        let possible_words: Vec<QueryWord> = Vec::from(&self.variants[0][..]);
+        Some(QueryLatticeState { phrase_position, word_position, possible_words })
+    }
+
+    fn is_match(&self, state: &Option<QueryLatticeState>) -> bool {
+        match state {
+            &None => false,
+            &Some(ref qls) => {
+                if qls.word_position == 2 && qls.phrase_position == self.variants.len() {
+                    return true
+                } else {
+                    return false
+                }
+            }
+        }
+    }
+
+    fn can_match(&self, state: &Option<QueryLatticeState>) -> bool {
+        match state {
+            &None => false,
+            &Some(ref qls) => {
+                if qls.possible_words.len() > 0 {
+                    return true
+                } else {
+                    return false
+                }
+            }
+        }
+    }
+
+    fn accept(&self, state: &Option<QueryLatticeState>, byte: u8) -> Option<QueryLatticeState> {
+        let new_phrase_position: usize;
+        let new_word_position: usize;
+        let mut matching_words: Vec<QueryWord> = Vec::new();
+        match &state {
+            None => return None,
+            Some(qls) => {
+                for i in 0..qls.possible_words.len() {
+                    let word = qls.possible_words[i];
+                    match word {
+                        QueryWord::Full {id, ..} => {
+                            let word_key = util::three_byte_encode(id);
+                            if word_key[qls.word_position] == byte {
+                                matching_words.push(word);
+                            }
+                        },
+                        QueryWord::Prefix {id_range, ..} => {
+                            let min_key = util::three_byte_encode(id_range.0);
+                            let max_key = util::three_byte_encode(id_range.1);
+                            if (min_key[qls.word_position] <= byte) && (byte <= max_key[qls.word_position]) {
+                                matching_words.push(word);
+                            }
+                        }
+                    }
+                }
+                if matching_words.len() > 0 {
+                    // if we're at the end of a word
+                    if qls.word_position == 2 {
+                        // if we're not at the end of the phrase
+                        if qls.phrase_position < self.variants.len() {
+                            // next time, look at the next word's 0th position
+                            new_phrase_position = qls.phrase_position + 1;
+                            new_word_position = 0;
+                        } else {
+                            new_word_position = qls.word_position;
+                            new_phrase_position = qls.phrase_position;
+                        }
+                    } else {
+                        // stay at the same phrase position, but move on to the next word
+                        new_phrase_position = qls.phrase_position;
+                        new_word_position = qls.word_position + 1;
+                    }
+                } else {
+                    return None
+                }
+            }
+        }
+        Some(QueryLatticeState {
+            phrase_position: new_phrase_position,
+            word_position: new_word_position,
+            possible_words: matching_words
+        })
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -409,5 +521,7 @@ mod tests {
         let word_seq = [ words[0], words[2], words[1] ];
         QueryPhrase::new(&word_seq).unwrap();
     }
+
+
 
 }
