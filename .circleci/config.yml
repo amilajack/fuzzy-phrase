@@ -29,7 +29,7 @@ jobs:
           name: Coverage
           command: |
             sudo apt-get update && sudo apt-get install libssl-dev pkg-config cmake zlib1g-dev
-            cargo install cargo-tarpaulin
+            RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-tarpaulin
             cargo tarpaulin \
               --ciserver circle-ci \
               --verbose --out Xml
