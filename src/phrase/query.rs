@@ -176,6 +176,7 @@ enum PossibleWord {
 pub struct QueryLatticeState {
     phrase_position: usize,
     word_position: usize,
+    word_so_far: Vec<u8>,
     possible_words: Vec<PossibleWord>,
 }
 
@@ -193,6 +194,7 @@ impl Automaton for QueryLattice {
         // position
         let phrase_position = 0;
         let word_position = 0;
+        let word_so_far = vec![];
         let mut possible_words: Vec<PossibleWord> = Vec::new();
         for word in &self.variants[0][..] {
             match word {
@@ -208,7 +210,7 @@ impl Automaton for QueryLattice {
             }
         }
 
-        Some(QueryLatticeState { phrase_position, word_position, possible_words })
+        Some(QueryLatticeState { phrase_position, word_position, word_so_far, possible_words })
     }
 
     fn is_match(&self, state: &Option<QueryLatticeState>) -> bool {
@@ -245,6 +247,9 @@ impl Automaton for QueryLattice {
         match &state {
             None => return None,
             Some(qls) => {
+                let mut new_word_so_far: Vec<u8> = Vec::new();
+                new_word_so_far.extend_from_slice(&qls.word_so_far[..]);
+                new_word_so_far.push(byte);
                 for i in 0..qls.possible_words.len() {
                     let word = &qls.possible_words[i];
                     match word {
@@ -254,7 +259,9 @@ impl Automaton for QueryLattice {
                             }
                         },
                         PossibleWord::KeyRange {min, max} => {
-                            if (min[qls.word_position] <= byte) && (byte <= max[qls.word_position]) {
+                            let min_cmp = Vec::from(&min[..qls.word_position+1]);
+                            let max_cmp = Vec::from(&max[..qls.word_position+1]);
+                            if (min_cmp <= new_word_so_far) && (new_word_so_far <= max_cmp) {
                                 let min_key = Vec::from(&min[..]);
                                 let max_key = Vec::from(&max[..]);
                                 matching_words.push(PossibleWord::KeyRange{min: min_key, max: max_key});
@@ -272,8 +279,9 @@ impl Automaton for QueryLattice {
                             new_phrase_position = qls.phrase_position;
                             new_possible_words = matching_words;
                         } else {
-                            // if we're not at the end of the phrase, then next time, look at the
-                            // next word's 0th position
+                            // if we're not at the end of the phrase, then next time...
+
+                            // ...look at the next word's 0th position
                             new_phrase_position = qls.phrase_position + 1;
                             new_word_position = 0;
                             for word in &self.variants[0][..] {
@@ -289,6 +297,8 @@ impl Automaton for QueryLattice {
                                     }
                                 }
                             }
+                            // ...and start with a blank word_so_far
+                            new_word_so_far.clear();
                         }
                     } else {
                         // stay at the same phrase position, but move on to the next word position
@@ -299,13 +309,14 @@ impl Automaton for QueryLattice {
                 } else {
                     return None
                 }
+                return Some(QueryLatticeState {
+                    phrase_position: new_phrase_position,
+                    word_position: new_word_position,
+                    possible_words: new_possible_words,
+                    word_so_far: new_word_so_far
+                })
             }
         }
-        Some(QueryLatticeState {
-            phrase_position: new_phrase_position,
-            word_position: new_word_position,
-            possible_words: new_possible_words,
-        })
     }
 }
 
@@ -557,7 +568,5 @@ mod tests {
         let word_seq = [ words[0], words[2], words[1] ];
         QueryPhrase::new(&word_seq).unwrap();
     }
-
-
 
 }

@@ -11,7 +11,7 @@ use fst::raw::{CompiledAddr};
 
 use self::util::word_ids_to_key;
 use self::util::PhraseSetError;
-use self::query::{QueryPhrase};
+use self::query::{QueryPhrase, QueryWord, QueryLattice};
 
 pub struct PhraseSet(Set);
 
@@ -145,6 +145,26 @@ impl PhraseSet {
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, fst::Error> {
         Set::from_path(path).map(PhraseSet)
+    }
+
+    pub fn contains_combinations(&self, variants: Vec<Vec<QueryWord>>) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+        let query_length = variants.len();
+        let query_lattice = QueryLattice::new(variants);
+        let mut stream = self.0.search(query_lattice).into_stream();
+        let mut results: Vec<Vec<QueryWord>> = Vec::new();
+        while let Some(k) = stream.next() {
+            let mut result: Vec<QueryWord> = Vec::new();
+            for i in 0..query_length {
+                let id = util::three_byte_decode(&k[i*3..i*3+3]);
+                let edit_distance = 0;
+                let result_word = QueryWord::Full{ id, edit_distance };
+                result.push(result_word);
+            }
+            results.push(result);
+        }
+
+        return Ok(results)
+
     }
 
 }
@@ -536,6 +556,29 @@ mod tests {
         let word_seq = [ words[0], words[1], matching_edge_hi ];
         let phrase = QueryPhrase::new(&word_seq).unwrap();
         assert_eq!(true, phrase_set.contains_prefix(phrase).unwrap());
+
+
+    }
+
+    #[test]
+    fn lattice_contains() {
+        // in each of these cases, the sought range is within actual range, but the min and max
+        // keys are not in the graph. that means we need to make sure that there is at least one
+        // path that is actually within the sought range.
+        let mut build = PhraseSetBuilder::memory();
+        build.insert(&[1u32, 61_528_u32, 561_528u32]).unwrap();
+        build.insert(&[61_528_u32, 561_528u32, 1u32]).unwrap();
+        build.insert(&[561_528u32, 1u32, 61_528_u32]).unwrap();
+        let bytes = build.into_inner().unwrap();
+
+        let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
+
+        let words = vec![
+            QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+            QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+        ];
+
 
 
     }
