@@ -8,3 +8,5 @@ coverage:
         target: 0%
 ignore:
   - "benches/.*"
+  - "test_utils/.*"
+  - "src/glue/fuzz_tests.rs"

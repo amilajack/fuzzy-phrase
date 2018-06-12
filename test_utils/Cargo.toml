@@ -1,0 +1,10 @@
+[package]
+name = "test_utils"
+version = "0.1.0"
+authors = ["Andrew Pendleton <andrew@mapbox.com>"]
+
+[dependencies]
+reqwest = "0.8.5"
+libflate = "0.1.11"
+rand = "0.5.0"
+itertools = "0.7.8"

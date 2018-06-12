@@ -2,7 +2,7 @@ use super::util;
 use fst::Automaton;
 
 /// An abstraction over full words and prefixes.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
