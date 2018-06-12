@@ -73,7 +73,6 @@ impl PhraseSet {
         return Some(node.addr())
     }
 
-    // TODO: this needs to get called inside contains_prefix when final word is QueryWord::prefix <15-05-18, boblannon> //
     fn matches_prefix_range(&self, start_position: CompiledAddr, key_range: (Vec<u8>, Vec<u8>)) -> bool {
         let (sought_min_key, sought_max_key) = key_range;
 
