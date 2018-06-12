@@ -7,7 +7,7 @@ machine:
 jobs:
   build:
     docker:
-      - image: circleci/rust:1.26.0-jessie
+      - image: circleci/rust:1.26.2-stretch
     steps:
       - setup-docker-engine
       - checkout
@@ -15,7 +15,7 @@ jobs:
           name: Symlink Cargo
           command: ln -s /usr/local/cargo ~/.cargo
       - restore_cache:
-          key: build-1.26.0jessie-{{ .Branch }}-{{ checksum "Cargo.toml" }}
+          key: build-1.26.2stretch-{{ .Branch }}-{{ checksum "Cargo.toml" }}
       - run:
           name: Build
           command: |
@@ -25,16 +25,17 @@ jobs:
       - run:
           name: Test
           command: cargo test -- --nocapture
-      - save_cache:
-          key: build-1.26.0jessie-{{ .Branch }}-{{ checksum "Cargo.toml" }}
-          paths:
-            - "~/.cargo"
-            - "./target"
       - run:
           name: Coverage
           command: |
-            bash <(curl https://raw.githubusercontent.com/xd009642/tarpaulin/master/travis-install.sh)
+            apt-get update && apt-get install libssl-dev pkg-config cmake zlib1g-dev
+            cargo install cargo-tarpaulin
             cargo tarpaulin \
               --ciserver circle-ci \
               --verbose --out Xml
             bash <(curl -s https://codecov.io/bash)
+      - save_cache:
+          key: build-1.26.2stretch-{{ .Branch }}-{{ checksum "Cargo.toml" }}
+          paths:
+            - "~/.cargo"
+            - "./target"
