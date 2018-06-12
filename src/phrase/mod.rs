@@ -43,18 +43,18 @@ impl PhraseSet {
     /// Test whether a query phrase can be found at the beginning of any phrase in the Set. Also
     /// known as a "starts with" search.
     pub fn contains_prefix(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError>  {
-        if phrase.has_prefix {
-            match self.contains_prefix_with_range(phrase) {
-                true => return Ok(true),
-                false => return Ok(false),
-            }
-        }
         let key = phrase.full_word_key();
         let fst = self.0.as_fst();
         let root_addr = fst.root().addr();
         match self.partial_search(root_addr, &key) {
-            None => return Ok(false),
-            Some(..) => return Ok(true),
+            None => Ok(false),
+            Some(addr) => {
+                if phrase.has_prefix {
+                    Ok(self.matches_prefix_range(addr, phrase.prefix_key_range().unwrap()))
+                } else {
+                    Ok(true)
+                }
+            }
         }
     }
 
@@ -73,35 +73,14 @@ impl PhraseSet {
         return Some(node.addr())
     }
 
-    // TODO: this needs to get called inside contains_prefix when final word is QueryWord::prefix <15-05-18, boblannon> //
-    fn contains_prefix_with_range(&self, phrase: QueryPhrase) -> bool {
-        let (sought_min_key, sought_max_key) = phrase.prefix_key_range().unwrap();
+    fn matches_prefix_range(&self, start_position: CompiledAddr, key_range: (Vec<u8>, Vec<u8>)) -> bool {
+        let (sought_min_key, sought_max_key) = key_range;
 
 		// self as fst
         let fst = &self.0.as_fst();
-        // start from root node
-        let root_node = fst.root();
-
-		// using the keys for the full words, walk the graph. if no path accepts these keys, stop.
-        let full_word_key = phrase.full_word_key();
-        let full_word_addr = match self.partial_search(root_node.addr(), &full_word_key) {
-            None => {
-                return false
-            },
-            Some(addr) => {
-                let full_word_node = fst.node(addr);
-                // since we still have a prefix to evaluate, we shouldn't have arrived at a node
-                // with zero transitions. if so, we know the prefix won't match.
-                if full_word_node.is_empty() {
-                    return false
-                } else {
-                    full_word_node.addr()
-                }
-            }
-        };
 
         // get min value greater than or qual to the sought min
-        let node0 = fst.node(full_word_addr);
+        let node0 = fst.node(start_position);
         for t0 in node0.transitions().skip_while(|t| t.inp < sought_min_key[0]) {
             let must_skip1 = t0.inp == sought_min_key[0];
             let node1 = fst.node(t0.addr);
