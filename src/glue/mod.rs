@@ -329,22 +329,20 @@ impl FuzzyPhraseSet {
             }
         }
 
-        let phrase_possibilities = self.get_combinations(word_possibilities, max_phrase_dist);
+        let phrase_matches = self.phrase_set.recursive_match_combinations(word_possibilities, max_phrase_dist)?;
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
-        for phrase_p in &phrase_possibilities {
-            if self.phrase_set.contains(QueryPhrase::new(phrase_p)?)? {
-                results.push(FuzzyMatchResult {
-                    phrase: phrase_p.iter().map(|qw| match qw {
-                        QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
-                        _ => panic!("prefixes not allowed"),
-                    }).collect::<Vec<String>>(),
-                    edit_distance: phrase_p.iter().map(|qw| match qw {
-                        QueryWord::Full { edit_distance, .. } => *edit_distance,
-                        _ => panic!("prefixes not allowed"),
-                    }).sum(),
-                })
-            }
+        for phrase_p in &phrase_matches {
+            results.push(FuzzyMatchResult {
+                phrase: phrase_p.iter().map(|qw| match qw {
+                    QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
+                    _ => panic!("prefixes not allowed"),
+                }).collect::<Vec<String>>(),
+                edit_distance: phrase_p.iter().map(|qw| match qw {
+                    QueryWord::Full { edit_distance, .. } => *edit_distance,
+                    _ => panic!("prefixes not allowed"),
+                }).sum(),
+            });
         }
 
         Ok(results)

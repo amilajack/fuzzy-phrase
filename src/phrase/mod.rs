@@ -7,11 +7,11 @@ use std::path::Path;
 
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder, Streamer};
-use fst::raw::{CompiledAddr};
+use fst::raw::{CompiledAddr, Node, Fst};
 
-use self::util::word_ids_to_key;
+use self::util::{word_ids_to_key, three_byte_encode};
 use self::util::PhraseSetError;
-use self::query::{QueryPhrase};
+use self::query::{QueryWord, QueryPhrase};
 
 pub struct PhraseSet(Set);
 
@@ -58,6 +58,57 @@ impl PhraseSet {
         }
     }
 
+    pub fn recursive_match_combinations(&self, word_possibilities: Vec<Vec<QueryWord>>, max_phrase_dist: u8) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+        // this function recursively combines word variants to enumerate their possible combinations
+
+        fn exact_recursive_search(possibilities: &Vec<Vec<QueryWord>>, position: usize, fst: &Fst, node: &Node, budget_remaining: u8, so_far: Vec<QueryWord>) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+            let mut out: Vec<Vec<QueryWord>> = Vec::new();
+
+            for word in possibilities[position].iter() {
+                let (id, edit_distance) = match word {
+                    QueryWord::Full { id, edit_distance } => (*id, *edit_distance),
+                    _ => return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full")),
+                };
+                if edit_distance > budget_remaining {
+                    break
+                }
+
+                // can we find the next word from our current position?
+                let encoded = three_byte_encode(id);
+                let mut found = true;
+                // make a mutable copy to traverse
+                let mut search_node = node.to_owned();
+                for b in encoded {
+                    if let Some(i) = search_node.find_input(b) {
+                        search_node = fst.node(search_node.transition_addr(i));
+                    } else {
+                        found = false;
+                        break;
+                    }
+                }
+
+                if found {
+                    let mut rec_so_far = so_far.clone();
+                    rec_so_far.push(word.clone());
+                    if position < possibilities.len() - 1 {
+                        out.extend(exact_recursive_search(possibilities, position + 1, fst, &search_node, budget_remaining - edit_distance, rec_so_far)?);
+                    } else {
+                        // if we're at the end of the line, we'll only keep this result if it's final
+                        if search_node.is_final() {
+                            out.push(rec_so_far);
+                        }
+                    }
+                }
+            }
+            Ok(out)
+        }
+
+
+        let fst = self.0.as_fst();
+        let root = fst.root();
+        exact_recursive_search(&word_possibilities, 0, &fst, &root, max_phrase_dist, Vec::new())
+    }
+
     /// Helper function for doing a byte-by-byte walk through the phrase graph, staring at any
     /// arbitrary node. Not to be used directly.
     fn partial_search(&self, start_addr: CompiledAddr, key: &[u8]) -> Option<CompiledAddr> {
@@ -73,10 +124,6 @@ impl PhraseSet {
         return Some(node.addr())
     }
 
-<<<<<<< HEAD
-    // TODO: this needs to get called inside contains_prefix when final word is QueryWord::prefix <15-05-18, boblannon> //
-=======
->>>>>>> master
     fn matches_prefix_range(&self, start_position: CompiledAddr, key_range: (Vec<u8>, Vec<u8>)) -> bool {
         let (sought_min_key, sought_max_key) = key_range;
 
