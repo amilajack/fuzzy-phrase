@@ -29,3 +29,7 @@ Modified and original versions available under the Apache License, Version 2.0
 <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
 license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your option, see
 in-code comments for details.
+
+Contains code modified from https://github.com/dguo/strsim-rs/blob/master/src/lib.rs
+Modified and original versions available under the MIT license 
+<http://opensource.org/licenses/MIT>; see in-code comments for details.

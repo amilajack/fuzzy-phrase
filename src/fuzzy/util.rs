@@ -1,5 +1,32 @@
 use std::cmp::min;
 
+/// This functions implements modified Damerau-Levenshtein distance (also called
+/// Damerau-Levenshtein optimal string alignment). It calculates the edit distance between strings,
+/// where edits can consist of insertion, deletion, substitution, or transposition, but unlike
+/// traditional Damerau-Levenshtein, it does not consider edit sequences where a transposition is
+/// followed by further edits that affect the transposed letters (for example, two adjacent
+/// subsequent transpositions, or a transposition followed by an insert in between the transposed
+/// letters), and as such, it no longer satisfies the triangle inequality. For example, d(CA, AC) ==
+/// 1, d(AC, ABC) == 1, but d(CA, ABC) == 3. In return, however, it's significantly faster than
+/// regular D-L.
+///
+/// This implementation is inspired pretty directly by the pseudocode here:
+/// https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance#Optimal_string_alignment_distance
+/// plus some alterations to avoid work repetition when comparing the same target string to
+/// multiple different candidate matches, as we do in the context of Symspell lookups. It avoids
+/// repeating Unicode parses if possible, and also reuses the main distance matrix across multiple
+/// sets of comparisons. This distance matrix is a ~len(a)*len(b) matrix, modeled in, e.g.,
+/// simstring, as a vector of vectors, but here we emulate a 2D matrix using a single linear vector
+/// to improve spatial locality and reduce allocations. Further, we can see that matrix is
+/// initially constructed with 0..len(a) along the top row and 0..len(b) along the first column,
+/// and these values never change over the course of the run of the algorithm, and further that the
+/// remaining cells are filled in in order from top left to bottom right, looking only at
+/// already-filled in cells to do so. Finally, noßthing bad happens if the matrix is oversized; we
+/// just don't end up consulting some rows. This means if we're doing multiple matches, we can
+/// construct a single vector up front that's big enough for the biggest word (so, max candidate
+/// length * target length) and populate the first row and (simulated) first column, and then reuse
+/// it for all of the words we're checking.
+
 pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32> {
     let t_chars: Vec<char> = target.as_ref().chars().collect();
     let t_len = t_chars.len();
@@ -23,6 +50,8 @@ pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32
     let d_width = t_len + 1;
     let d_height = max_s_len + 1;
     let mut d: Vec<u32> = vec![0; d_width * d_height];
+    // we're going to want to be able to pretend to do lookups like d[x][y] even though d is
+    // actually 1-dimensional, so this is a handly closure to do that
     let idx = |x, y| x + (y * d_width);
 
     for i in 0..=t_len {
@@ -70,6 +99,11 @@ pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32
 mod tests {
     use super::*;
 
+    // until otherwise noted, tests are modifications of tests found in the strsim-rs library,
+    // https://github.com/dguo/strsim-rs/blob/ce93ac165200422d21e92879d02f9ac7c7c998bd/src/lib.rs#L533-L614
+    // Original tests Copyright 2015 Danny Guo, 2016 Titus Wormer, licensed under the MIT License
+    // https://github.com/dguo/strsim-rs/blob/ce93ac165200422d21e92879d02f9ac7c7c998bd/LICENSE
+    // Modifications Copyright 2018 Mapbox, made available under same license
     #[test]
     fn mmd_empty() {
         assert_eq!(0, multi_modified_damlev("", &[""])[0]);
@@ -153,6 +187,7 @@ mod tests {
         assert_eq!(4, multi_modified_damlev("a cat", &["an abct"])[0]);
     }
 
+    // after this point, tests are our own
     #[test]
     fn mmd_multi_dist() {
         assert_eq!(
