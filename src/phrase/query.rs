@@ -1,5 +1,6 @@
 use super::util;
 use fst::Automaton;
+use std::cmp::PartialEq;
 
 /// An abstraction over full words and prefixes.
 #[derive(Copy, Clone, Debug)]
@@ -31,6 +32,35 @@ impl QueryWord
                 let s = format!("{}..{}", s_start, s_end);
                 return s
             }
+        }
+    }
+}
+
+impl PartialEq for QueryWord {
+    fn eq(&self, other: &QueryWord) -> bool {
+        match self {
+            QueryWord::Full{ id, .. } => {
+                let my_id = id;
+                match other {
+                    QueryWord::Full{ id, ..} => {
+                        return my_id == id
+                    },
+                    QueryWord::Prefix{..} => {
+                        return false
+                    }
+                }
+            },
+            QueryWord::Prefix{ id_range, ..} => {
+                let my_id_range = id_range;
+                match other {
+                    QueryWord::Full{..} => {
+                        return false
+                    },
+                    QueryWord::Prefix{id_range, ..} => {
+                        return my_id_range == id_range
+                    }
+                }
+            },
         }
     }
 }
@@ -325,6 +355,24 @@ impl Automaton for QueryLattice {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn query_word_partial_eq() {
+        let word =  QueryWord::Full{ id: 1u32, edit_distance: 0 };
+        let matching_word = QueryWord::Full{ id: 1u32, edit_distance: 0 };
+        let nonmatching_word = QueryWord::Full{ id: 2u32, edit_distance: 0 };
+
+        assert!(word != nonmatching_word);
+        assert!(word == matching_word);
+
+        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
+        let matching_prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
+        let nonmatching_prefix = QueryWord::Prefix{ id_range: (1u32, 561_531u32) };
+
+        assert!(word != prefix);
+        assert!(prefix == matching_prefix);
+        assert!(prefix != nonmatching_prefix);
+    }
 
     #[test]
     fn query_word_to_string() {
