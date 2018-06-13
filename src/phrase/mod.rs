@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn lattice_contains() {
+    fn test_contains_combinations() {
         // in each of these cases, the sought range is within actual range, but the min and max
         // keys are not in the graph. that means we need to make sure that there is at least one
         // path that is actually within the sought range.
@@ -573,13 +573,40 @@ mod tests {
 
         let phrase_set = PhraseSet::from_bytes(bytes).unwrap();
 
-        let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 0 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
-            QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+        let variants = vec![
+            vec![
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 99_999u32, edit_distance: 0 },
+            ],
+            vec![
+                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            ],
+            vec![
+                QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+            ]
         ];
 
+        let expected_results = vec![
+            vec![
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+            ],
+            vec![
+                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            ],
+        ];
 
+        let results = phrase_set.contains_combinations(variants).unwrap();
+
+        assert_eq!(expected_results, results);
 
     }
 
