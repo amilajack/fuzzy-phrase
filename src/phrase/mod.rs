@@ -587,7 +587,7 @@ mod tests {
             vec![
                 QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
                 QueryWord::Full{ id: 1u32, edit_distance: 0 },
-                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 127_064u32, edit_distance: 0 },
             ]
         ];
 
@@ -607,6 +607,31 @@ mod tests {
         let results = phrase_set.contains_combinations(variants).unwrap();
 
         assert_eq!(expected_results, results);
+        println!("{:?}", util::three_byte_encode(61_528u32));
+        println!("{:?}", util::three_byte_decode(&[1u8, 240u8, 88u8]));
+
+        let variants = vec![
+            vec![
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 99_999u32, edit_distance: 0 },
+            ],
+            vec![
+                QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+            ],
+            vec![
+                QueryWord::Prefix{ id_range: (561_520u32, 561_530u32) },
+                QueryWord::Full{ id: 1u32, edit_distance: 0 },
+                QueryWord::Full{ id: 127_064u32, edit_distance: 0 },
+            ]
+        ];
+
+        let results = phrase_set.contains_combinations(variants).unwrap();
+
+        assert_eq!(expected_results, results);
+
 
     }
 
