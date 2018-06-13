@@ -198,11 +198,13 @@ pub struct QueryLattice {
     variants: Vec<Vec<QueryWord>>
 }
 
+#[derive(Debug)]
 enum PossibleWord {
     Key(Vec<u8>),
     KeyRange { min: Vec<u8>, max: Vec<u8> },
 }
 
+#[derive(Debug)]
 pub struct QueryLatticeState {
     phrase_position: usize,
     word_position: usize,
@@ -245,9 +247,9 @@ impl Automaton for QueryLattice {
 
     fn is_match(&self, state: &Option<QueryLatticeState>) -> bool {
         match state {
-            &None => false,
+            &None => return false,
             &Some(ref qls) => {
-                if qls.word_position == 2 && qls.phrase_position == self.variants.len() {
+                if qls.word_position == 2 && qls.phrase_position == self.variants.len() - 1 {
                     return true
                 } else {
                     return false
@@ -258,7 +260,7 @@ impl Automaton for QueryLattice {
 
     fn can_match(&self, state: &Option<QueryLatticeState>) -> bool {
         match state {
-            &None => false,
+            &None => { return false },
             &Some(ref qls) => {
                 if qls.possible_words.len() > 0 {
                     return true
@@ -302,7 +304,7 @@ impl Automaton for QueryLattice {
                 if matching_words.len() > 0 {
                     // if we're at the end of a word
                     if qls.word_position == 2 {
-                        if qls.phrase_position == self.variants.len() {
+                        if qls.phrase_position == self.variants.len() - 1 {
                             // if we're at the end of the phrase, stay there and pass along the
                             // matching words
                             new_word_position = qls.word_position;
@@ -314,7 +316,7 @@ impl Automaton for QueryLattice {
                             // ...look at the next word's 0th position
                             new_phrase_position = qls.phrase_position + 1;
                             new_word_position = 0;
-                            for word in &self.variants[0][..] {
+                            for word in &self.variants[new_phrase_position][..] {
                                 match word {
                                     &QueryWord::Full {id, ..} => {
                                         let key = util::three_byte_encode(id);
@@ -336,15 +338,15 @@ impl Automaton for QueryLattice {
                         new_word_position = qls.word_position + 1;
                         new_possible_words = matching_words;
                     }
+                    return Some(QueryLatticeState {
+                        phrase_position: new_phrase_position,
+                        word_position: new_word_position,
+                        possible_words: new_possible_words,
+                        word_so_far: new_word_so_far
+                    })
                 } else {
                     return None
                 }
-                return Some(QueryLatticeState {
-                    phrase_position: new_phrase_position,
-                    word_position: new_word_position,
-                    possible_words: new_possible_words,
-                    word_so_far: new_word_so_far
-                })
             }
         }
     }
