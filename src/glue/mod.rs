@@ -409,22 +409,20 @@ impl FuzzyPhraseSet {
         }
         word_possibilities.push(last_variants);
 
-        let phrase_possibilities = self.get_combinations(word_possibilities, max_phrase_dist);
+        let phrase_matches = self.phrase_set.recursive_match_combinations_as_prefixes(word_possibilities, max_phrase_dist)?;
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
-        for phrase_p in &phrase_possibilities {
-            if self.phrase_set.contains_prefix(QueryPhrase::new(phrase_p)?)? {
-                results.push(FuzzyMatchResult {
-                    phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
-                        QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
-                        QueryWord::Prefix { .. } => phrase[i].to_owned(),
-                    }).collect::<Vec<String>>(),
-                    edit_distance: phrase_p.iter().map(|qw| match qw {
-                        QueryWord::Full { edit_distance, .. } => *edit_distance,
-                        QueryWord::Prefix { .. } => 0u8,
-                    }).sum(),
-                })
-            }
+        for phrase_p in &phrase_matches {
+            results.push(FuzzyMatchResult {
+                phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
+                    QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
+                    QueryWord::Prefix { .. } => phrase[i].to_owned(),
+                }).collect::<Vec<String>>(),
+                edit_distance: phrase_p.iter().map(|qw| match qw {
+                    QueryWord::Full { edit_distance, .. } => *edit_distance,
+                    QueryWord::Prefix { .. } => 0u8,
+                }).sum(),
+            })
         }
 
         Ok(results)
@@ -433,34 +431,6 @@ impl FuzzyPhraseSet {
     pub fn fuzzy_match_prefix_str(&self, phrase: &str, max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
         let phrase_v: Vec<&str> = phrase.split(' ').collect();
         self.fuzzy_match_prefix(&phrase_v, max_word_dist, max_phrase_dist)
-    }
-
-    fn get_combinations(&self, word_possibilities: Vec<Vec<QueryWord>>, max_phrase_dist: u8) -> Vec<Vec<QueryWord>> {
-        // this function recursively combines word variants to enumerate their possible combinations
-
-        fn recursive_search(possibilities: &Vec<Vec<QueryWord>>, position: usize, budget_remaining: u8, so_far: Vec<QueryWord>) -> Vec<Vec<QueryWord>> {
-            let mut out: Vec<Vec<QueryWord>> = Vec::new();
-            for word in possibilities[position].iter() {
-                let edit_distance: u8 = match word {
-                    QueryWord::Full { edit_distance, .. } => *edit_distance,
-                    _ => 0u8,
-                };
-                if edit_distance > budget_remaining {
-                    break
-                }
-
-                let mut rec_so_far = so_far.clone();
-                rec_so_far.push(word.clone());
-                if position < possibilities.len() - 1 {
-                    out.extend(recursive_search(possibilities, position + 1, budget_remaining - edit_distance, rec_so_far));
-                } else {
-                    out.push(rec_so_far);
-                }
-            }
-            out
-        }
-
-        recursive_search(&word_possibilities, 0, max_phrase_dist, Vec::new())
     }
 }
 
