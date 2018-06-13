@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
 #[cfg(test)] extern crate reqwest;
 
-use fuzzy::util::multi_modified_damlev;
+use fuzzy::util::multi_modified_damlev_hint;
 
 static MULTI_FLAG: u64 = 1 << 63;
 static MULTI_MASK: u64 = !(1 << 63);
@@ -116,7 +116,7 @@ impl FuzzyMap {
         matches.dedup();
 
         let match_words = matches.iter().map(|id| lookup_fn(*id)).collect::<Vec<_>>();
-        let distances = multi_modified_damlev(query, &match_words);
+        let distances = multi_modified_damlev_hint(query, &match_words, edit_distance as u32);
 
         let mut out = matches
             .into_iter()
@@ -269,6 +269,7 @@ impl<'s, 'a, A: Automaton> IntoStreamer<'a> for StreamBuilder<'s, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuzzy::util::multi_modified_damlev;
 
     #[test]
     fn lookup_test_cases_d_1() {

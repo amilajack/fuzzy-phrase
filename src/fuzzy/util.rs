@@ -27,7 +27,18 @@ use std::cmp::min;
 /// length * target length) and populate the first row and (simulated) first column, and then reuse
 /// it for all of the words we're checking.
 
+#[allow(dead_code)]
+#[inline(always)]
 pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32> {
+    multi_modified_damlev_hint(target, sources, u32::max_value())
+}
+
+/// This is a variant of the main D-L function with slightly relaxed guarantees: you supply a hint
+/// for the maximum distance you care about, and for any pairs that are farther apart than that,
+/// you're guaranteed a result that's greater than your hinted max, but it might not be the actual
+/// distance.
+
+pub fn multi_modified_damlev_hint<T: AsRef<str>>(target: T, sources: &[T], max_hint: u32) -> Vec<u32> {
     let t_chars: Vec<char> = target.as_ref().chars().collect();
     let t_len = t_chars.len();
 
@@ -76,9 +87,10 @@ pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32
         }
 
         for i in 1..=t_len {
+            let mut row_min = u32::max_value();
             for j in 1..=s_len {
                 let cost = if t_chars[i - 1] == s_chars[j - 1] { 0 } else { 1 };
-                d[idx(i, j)] = min(
+                let mut current = min(
                     d[idx(i-1, j)] + 1,         // deletion
                     min(
                         d[idx(i, j-1)] + 1,     // insertion
@@ -86,8 +98,16 @@ pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32
                     )
                 );
                 if i > 1 && j > 1 && t_chars[i-1] == s_chars[j-2] && t_chars[i-2] == s_chars[j-1] {
-                    d[idx(i, j)] = min(d[idx(i, j)], d[idx(i-2, j-2)] + cost);  // transposition
+                    current = min(current, d[idx(i-2, j-2)] + cost);  // transposition
                 }
+                if current < row_min {
+                    row_min = current;
+                }
+                d[idx(i, j)] = current;
+            }
+            if row_min > max_hint {
+                d[idx(t_len, s_len)] = row_min;
+                break;
             }
         }
         out.push(d[idx(t_len, s_len)]);
@@ -194,5 +214,19 @@ mod tests {
             vec![0, 1, 2, 3, 6, 7],
             multi_modified_damlev("damerau", &["damerau", "domerau", "domera", "aderua", "aderuaxyz", ""])
         );
+    }
+
+    #[test]
+    fn mmd_multi_hint() {
+        let max_hint = 1;
+        let unhinted = multi_modified_damlev("damerau", &["damerau", "domerau", "domera", "aderua", "aderuaxyz", ""]);
+        let hinted = multi_modified_damlev_hint("damerau", &["damerau", "domerau", "domera", "aderua", "aderuaxyz", ""], 1);
+        for i in 0..unhinted.len() {
+            if unhinted[i] <= max_hint {
+                assert_eq!(unhinted[i], hinted[i]);
+            } else {
+                assert!(hinted[i] > max_hint);
+            }
+        }
     }
 }
