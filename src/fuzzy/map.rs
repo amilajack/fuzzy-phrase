@@ -13,8 +13,9 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
-use strsim::damerau_levenshtein;
 #[cfg(test)] extern crate reqwest;
+
+use fuzzy::util::multi_modified_damlev;
 
 static MULTI_FLAG: u64 = 1 << 63;
 static MULTI_MASK: u64 = !(1 << 63);
@@ -112,14 +113,17 @@ impl FuzzyMap {
         }
         //return all ids that match
         matches.sort();
+        matches.dedup();
+
+        let match_words = matches.iter().map(|id| lookup_fn(*id)).collect::<Vec<_>>();
+        let distances = multi_modified_damlev(query, &match_words);
 
         let mut out = matches
-            .into_iter().dedup()
-            .filter_map(|id| {
-                let word = lookup_fn(id);
-                let distance = damerau_levenshtein(query, word);
-                if distance <= edit_distance as usize {
-                    Some(FuzzyMapLookupResult { word: word.to_owned(), id: id as u32, edit_distance: distance as u8 })
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, id)| {
+                if distances[i] <= edit_distance as u32 {
+                    Some(FuzzyMapLookupResult { word: match_words[i].to_owned(), id: id as u32, edit_distance: distances[i] as u8 })
                 } else {
                     None
                 }
@@ -277,7 +281,7 @@ mod tests {
         words.sort();
 
         let expect = |word: &'static str, query: &'static str| {
-            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: damerau_levenshtein(&word, &query) as u8 }
+            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
         };
 
         let no_return = Vec::<FuzzyMapLookupResult>::new();
@@ -328,7 +332,7 @@ mod tests {
         let words = vec!["100", "main", "street"];
 
         let expect = |word: &'static str, query: &'static str| {
-            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: damerau_levenshtein(&word, &query) as u8 }
+            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
         };
 
         let dir = tempfile::tempdir().unwrap();

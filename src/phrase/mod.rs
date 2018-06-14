@@ -7,11 +7,11 @@ use std::path::Path;
 
 use fst;
 use fst::{IntoStreamer, Set, SetBuilder, Streamer};
-use fst::raw::{CompiledAddr};
+use fst::raw::{CompiledAddr, Node};
 
-use self::util::word_ids_to_key;
+use self::util::{word_ids_to_key, three_byte_encode};
 use self::util::PhraseSetError;
-use self::query::{QueryPhrase};
+use self::query::{QueryWord, QueryPhrase};
 
 pub struct PhraseSet(Set);
 
@@ -56,6 +56,160 @@ impl PhraseSet {
                 }
             }
         }
+    }
+
+    /// Recursively explore the phrase graph looking for combinations of candidate words to see
+    /// which ones match actual phrases in the phrase graph.
+    pub fn recursive_match_combinations(
+        &self,
+        word_possibilities: Vec<Vec<QueryWord>>,
+        max_phrase_dist: u8
+    ) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+        // this is just a thin wrapper around a private recursive function, with most of the
+        // arguments prefilled
+        let fst = self.0.as_fst();
+        let root = fst.root();
+        self.exact_recurse(&word_possibilities, 0, &root, max_phrase_dist, Vec::new())
+    }
+
+    fn exact_recurse(
+        &self,
+        possibilities: &Vec<Vec<QueryWord>>,
+        position: usize,
+        node: &Node,
+        budget_remaining: u8,
+        so_far: Vec<QueryWord>
+    ) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+        let mut out: Vec<Vec<QueryWord>> = Vec::new();
+        let fst = self.0.as_fst();
+
+        for word in possibilities[position].iter() {
+            let (id, edit_distance) = match word {
+                QueryWord::Full { id, edit_distance } => (*id, *edit_distance),
+                _ => return Err(PhraseSetError::new(
+                    "The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"
+                )),
+            };
+            if edit_distance > budget_remaining {
+                break
+            }
+
+            // can we find the next word from our current position?
+            let encoded = three_byte_encode(id);
+            let mut found = true;
+            // make a mutable copy to traverse
+            let mut search_node = node.to_owned();
+            for b in encoded {
+                if let Some(i) = search_node.find_input(b) {
+                    search_node = fst.node(search_node.transition_addr(i));
+                } else {
+                    found = false;
+                    break;
+                }
+            }
+
+            // only recurse or add a result if we the current word is in the graph in this position
+            if found {
+                let mut rec_so_far = so_far.clone();
+                rec_so_far.push(word.clone());
+                if position < possibilities.len() - 1 {
+                    out.extend(self.exact_recurse(
+                        possibilities,
+                        position + 1,
+                        &search_node,
+                        budget_remaining - edit_distance,
+                        rec_so_far
+                    )?);
+                } else {
+                    // if we're at the end of the line, we'll only keep this result if it's final
+                    if search_node.is_final() {
+                        out.push(rec_so_far);
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Recursively explore the phrase graph looking for combinations of candidate words to see
+    /// which ones match prefixes of actual phrases in the phrase graph.
+    pub fn recursive_match_combinations_as_prefixes(
+        &self,
+        word_possibilities: Vec<Vec<QueryWord>>,
+        max_phrase_dist: u8
+    ) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+        // this is just a thin wrapper around a private recursive function, with most of the
+        // arguments prefilled
+        let fst = self.0.as_fst();
+        let root = fst.root();
+        self.prefix_recurse(&word_possibilities, 0, &root, max_phrase_dist, Vec::new())
+    }
+
+    fn prefix_recurse(
+        &self,
+        possibilities: &Vec<Vec<QueryWord>>,
+        position: usize,
+        node: &Node,
+        budget_remaining: u8,
+        so_far: Vec<QueryWord>
+    ) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+        let mut out: Vec<Vec<QueryWord>> = Vec::new();
+        let fst = self.0.as_fst();
+
+        for word in possibilities[position].iter() {
+            match word {
+                QueryWord::Full { id, edit_distance } => {
+                    if *edit_distance > budget_remaining {
+                        break
+                    }
+
+                    // can we find the next word from our current position?
+                    let encoded = three_byte_encode(*id);
+                    let mut found = true;
+                    // make a mutable copy to traverse
+                    let mut search_node = node.to_owned();
+                    for b in encoded {
+                        if let Some(i) = search_node.find_input(b) {
+                            search_node = fst.node(search_node.transition_addr(i));
+                        } else {
+                            found = false;
+                            break;
+                        }
+                    }
+
+                    // only recurse or add a result if we the current word is in the graph in
+                    // this position
+                    if found {
+                        let mut rec_so_far = so_far.clone();
+                        rec_so_far.push(word.clone());
+                        if position < possibilities.len() - 1 {
+                            out.extend(self.prefix_recurse(
+                                possibilities,
+                                position + 1,
+                                &search_node,
+                                budget_remaining - edit_distance,
+                                rec_so_far
+                            )?);
+                        } else {
+                            out.push(rec_so_far);
+                        }
+                    }
+                },
+                QueryWord::Prefix { id_range } => {
+                    if self.matches_prefix_range(
+                        node.addr(),
+                        (three_byte_encode(id_range.0), three_byte_encode(id_range.1))
+                    ) {
+                        // presumably the prefix is at the end, so we don't need to consider the
+                        // possibility of recursing, just of being done
+                        let mut rec_so_far = so_far.clone();
+                        rec_so_far.push(word.clone());
+                        out.push(rec_so_far);
+                    }
+                },
+            }
+        }
+        Ok(out)
     }
 
     /// Helper function for doing a byte-by-byte walk through the phrase graph, staring at any
