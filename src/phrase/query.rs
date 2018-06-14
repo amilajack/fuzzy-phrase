@@ -1,13 +1,16 @@
 use super::util;
 use fst::Automaton;
 use std::cmp::PartialEq;
-
+// TODO: create key type [u8;3] <14-06-18, boblannon> //
+// TODO: update util to return that type for conversions //
+// TODO: store key as well <14-06-18, boblannon> //
 /// An abstraction over full words and prefixes.
 #[derive(Copy, Clone, Debug)]
 pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
         id: u32,
+        key: [u8; 3],
         edit_distance: u8,
     },
 
@@ -20,6 +23,19 @@ pub enum QueryWord {
 
 impl QueryWord
 {
+    
+    pub fn new_full(id:u32, edit_distance:u8) -> QueryWord {
+        let key: [u8; 3] = util::three_byte_encode(id);
+        QueryWord::Full { id, edit_distance, key }
+    }
+
+    pub fn new_prefix(id_range: (u32, u32)) -> QueryWord {
+        let min_key: [u8; 3] = util::three_byte_encode(id_range.0);
+        let max_key: [u8; 3] = util::three_byte_encode(id_range.1);
+        let key_range = (min_key, max_key);
+        QueryWord::Prefix { id_range, key_range }
+    }
+
     pub fn to_string<'a, T:Fn(u32) -> &'a str>(&self, id_to_string: T) -> String {
         match &self {
             &QueryWord::Full {id, ..} => {
@@ -34,6 +50,9 @@ impl QueryWord
             }
         }
     }
+}
+
+impl QueryWord {
 }
 
 impl PartialEq for QueryWord {
@@ -198,12 +217,14 @@ pub struct QueryLattice {
     variants: Vec<Vec<QueryWord>>
 }
 
+// TODO: get rid of possibleword, use queryword directly <14-06-18, boblannon> //
 #[derive(Debug)]
 enum PossibleWord {
     Key(Vec<u8>),
     KeyRange { min: Vec<u8>, max: Vec<u8> },
 }
 
+// TODO: accumulate edit distance <14-06-18, boblannon> //
 #[derive(Debug)]
 pub struct QueryLatticeState {
     phrase_position: usize,
