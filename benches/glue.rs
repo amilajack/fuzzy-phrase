@@ -57,7 +57,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         for _i in 0..1000 {
             let phrase = rng.choose(&data.phrases).unwrap();
-            let damaged = get_damaged_phrase(phrase);
+            let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w));
             damaged_phrases.push(damaged);
         }
 
@@ -76,7 +76,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         for _i in 0..1000 {
             let phrase = rng.choose(&data.phrases).unwrap();
-            let damaged = get_damaged_prefix(phrase);
+            let damaged = get_damaged_prefix(phrase, |w| data.set.can_fuzzy_match(w));
             damaged_phrases.push(damaged);
         }
 
