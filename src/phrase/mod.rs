@@ -13,6 +13,8 @@ use self::util::{word_ids_to_key, three_byte_encode};
 use self::util::PhraseSetError;
 use self::query::{QueryPhrase, QueryWord, QueryLattice};
 
+type WordKey = [u8; 3];
+
 pub struct PhraseSet(Set);
 
 /// PhraseSet is a lexicographically ordered set of phrases.
@@ -85,7 +87,7 @@ impl PhraseSet {
 
         for word in possibilities[position].iter() {
             let (id, edit_distance) = match word {
-                QueryWord::Full { id, edit_distance } => (*id, *edit_distance),
+                QueryWord::Full { id, edit_distance, .. } => (*id, *edit_distance),
                 _ => return Err(PhraseSetError::new(
                     "The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"
                 )),

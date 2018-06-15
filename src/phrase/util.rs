@@ -2,6 +2,7 @@ use std::io::Cursor;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use std::fmt;
 use std::error;
+use super::WordKey;
 
 pub fn chop_int(num: u32) -> Vec<u8> {
     let mut wtr = vec![];
@@ -9,10 +10,10 @@ pub fn chop_int(num: u32) -> Vec<u8> {
     wtr
 }
 
-pub fn three_byte_encode(num: u32) -> Vec<u8> {
+pub fn three_byte_encode(num: u32) -> WordKey {
     debug_assert!(num < 16_777_216);
     let chopped: Vec<u8> = chop_int(num);
-    let three_bytes: Vec<u8> = chopped[1..4].to_vec();
+    let three_bytes: WordKey = chopped[1..4];
     three_bytes
 }
 
