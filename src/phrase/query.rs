@@ -2,9 +2,7 @@ use super::util;
 use super::WordKey;
 use fst::Automaton;
 use std::cmp::PartialEq;
-// TODO: create key type [u8;3] <14-06-18, boblannon> //
-// TODO: update util to return that type for conversions //
-// TODO: store key as well <14-06-18, boblannon> //
+
 /// An abstraction over full words and prefixes.
 #[derive(Copy, Clone, Debug)]
 pub enum QueryWord {
@@ -215,20 +213,13 @@ pub struct QueryLattice {
     variants: Vec<Vec<QueryWord>>
 }
 
-// TODO: get rid of possibleword, use queryword directly <14-06-18, boblannon> //
-#[derive(Debug)]
-enum PossibleWord {
-    Key(WordKey),
-    KeyRange { min: WordKey, max: WordKey },
-}
-
 // TODO: accumulate edit distance <14-06-18, boblannon> //
 #[derive(Debug)]
 pub struct QueryLatticeState {
     phrase_position: usize,
     word_position: usize,
     word_so_far: Vec<u8>,
-    possible_words: Vec<PossibleWord>,
+    possible_words: Vec<QueryWord>,
 }
 
 impl QueryLattice {
@@ -246,17 +237,7 @@ impl Automaton for QueryLattice {
         let phrase_position = 0;
         let word_position = 0;
         let word_so_far = vec![];
-        let mut possible_words: Vec<PossibleWord> = Vec::new();
-        for word in &self.variants[0][..] {
-            match word {
-                &QueryWord::Full {key, ..} => {
-                    possible_words.push(PossibleWord::Key(key) );
-                },
-                &QueryWord::Prefix {key_range, ..} => {
-                    possible_words.push(PossibleWord::KeyRange{min: key_range.0, max: key_range.1});
-                }
-            }
-        }
+        let possible_words: Vec<QueryWord> = self.variants[0].clone();
 
         Some(QueryLatticeState { phrase_position, word_position, word_so_far, possible_words })
     }
@@ -290,8 +271,7 @@ impl Automaton for QueryLattice {
     fn accept(&self, state: &Option<QueryLatticeState>, byte: u8) -> Option<QueryLatticeState> {
         let new_phrase_position: usize;
         let new_word_position: usize;
-        let mut new_possible_words: Vec<PossibleWord> = Vec::new();
-        let mut matching_words: Vec<PossibleWord> = Vec::new();
+        let mut matching_words: Vec<QueryWord> = Vec::new();
         match &state {
             None => return None,
             Some(qls) => {
@@ -301,21 +281,22 @@ impl Automaton for QueryLattice {
                 for i in 0..qls.possible_words.len() {
                     let word = &qls.possible_words[i];
                     match word {
-                        PossibleWord::Key(word_key) => {
-                            if word_key[qls.word_position] == byte {
-                                matching_words.push(PossibleWord::Key(*word_key));
+                        QueryWord::Full { key, .. } => {
+                            if key[qls.word_position] == byte {
+                                matching_words.push(*word);
                             }
                         },
-                        PossibleWord::KeyRange {min, max} => {
-                            let min_cmp = Vec::from(&min[..qls.word_position+1]);
-                            let max_cmp = Vec::from(&max[..qls.word_position+1]);
+                        QueryWord::Prefix { key_range, .. } => { 
+                            let min_cmp: Vec<u8> = Vec::from(&key_range.0[..qls.word_position+1]);
+                            let max_cmp: Vec<u8> = Vec::from(&key_range.1[..qls.word_position+1]);
                             if (min_cmp <= new_word_so_far) && (new_word_so_far <= max_cmp) {
-                                matching_words.push(PossibleWord::KeyRange{min: *min, max: *max});
+                                matching_words.push(*word);
                             }
                         }
                     }
                 }
                 if matching_words.len() > 0 {
+                    let mut new_possible_words: Vec<QueryWord>;
                     // if we're at the end of a word
                     if qls.word_position == 2 {
                         if qls.phrase_position == self.variants.len() - 1 {
@@ -326,23 +307,10 @@ impl Automaton for QueryLattice {
                             new_possible_words = matching_words;
                         } else {
                             // if we're not at the end of the phrase, then next time...
-
                             // ...look at the next word's 0th position
                             new_phrase_position = qls.phrase_position + 1;
                             new_word_position = 0;
-                            for word in &self.variants[new_phrase_position][..] {
-                                match word {
-                                    &QueryWord::Full {id, ..} => {
-                                        let key = util::three_byte_encode(id);
-                                        new_possible_words.push(PossibleWord::Key(key) );
-                                    },
-                                    &QueryWord::Prefix {id_range, ..} => {
-                                        let min = util::three_byte_encode(id_range.0);
-                                        let max = util::three_byte_encode(id_range.1);
-                                        new_possible_words.push(PossibleWord::KeyRange{min, max});
-                                    }
-                                }
-                            }
+                            new_possible_words = self.variants[new_phrase_position].clone();
                             // ...and start with a blank word_so_far
                             new_word_so_far.clear();
                         }
