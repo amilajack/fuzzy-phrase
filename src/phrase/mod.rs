@@ -279,17 +279,33 @@ impl PhraseSet {
         Set::from_path(path).map(PhraseSet)
     }
 
-    pub fn contains_combinations(&self, variants: Vec<Vec<QueryWord>>) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
+    pub fn contains_combinations(&self, variants: Vec<Vec<QueryWord>>, max_phrase_dist: u8) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
         let query_length = variants.len();
-        let query_lattice = QueryLattice::new(variants);
+        let query_lattice = QueryLattice::new(&variants, max_phrase_dist);
         let mut stream = self.0.search(query_lattice).into_stream();
         let mut results: Vec<Vec<QueryWord>> = Vec::new();
         while let Some(k) = stream.next() {
             let mut result: Vec<QueryWord> = Vec::new();
             for i in 0..query_length {
-                let id = util::three_byte_decode(&k[i*3..i*3+3]);
-                let edit_distance = 0;
-                let result_word = QueryWord::new_full(id, edit_distance);
+                let mut result_key: WordKey = Default::default();
+                result_key.copy_from_slice(&k[i*3..i*3+3]);
+                let mut result_word: QueryWord = Default::default();
+                for variant in &variants[i][..] {
+                    match variant {
+                        QueryWord::Full { key, .. } => {
+                            if result_key == *key {
+                                result_word = *variant;
+                                break
+                            }
+                        },
+                        QueryWord::Prefix { key_range, .. } => {
+                            if (result_key > key_range.0) & (result_key < key_range.1) {
+                                result_word = *variant;
+                                break
+                            }
+                        }
+                    }
+                }
                 result.push(result_word);
             }
             results.push(result);
@@ -716,17 +732,17 @@ mod tests {
 
         let variants = vec![
             vec![
-                QueryWord::new_full(1u32,      0 ),
+                QueryWord::new_full(1u32,      1 ),
                 QueryWord::new_full(61_528u32, 0 ),
                 QueryWord::new_full(99_999u32, 0 ),
             ],
             vec![
                 QueryWord::new_full(61_528u32,  0 ),
-                QueryWord::new_full(561_528u32, 0 ),
+                QueryWord::new_full(561_528u32, 1 ),
                 QueryWord::new_full(1u32,       0 ),
             ],
             vec![
-                QueryWord::new_full(561_528u32, 0 ),
+                QueryWord::new_full(561_528u32, 1 ),
                 QueryWord::new_full(1u32,       0 ),
                 QueryWord::new_full(127_064u32, 0 ),
             ]
@@ -734,23 +750,52 @@ mod tests {
 
         let expected_results = vec![
             vec![
-                QueryWord::new_full(1u32,       0 ),
+                QueryWord::new_full(1u32,       1 ),
                 QueryWord::new_full(61_528u32,  0 ),
-                QueryWord::new_full(561_528u32, 0 ),
+                QueryWord::new_full(561_528u32, 1 ),
             ],
             vec![
                 QueryWord::new_full(61_528u32,  0 ),
-                QueryWord::new_full(561_528u32, 0 ),
+                QueryWord::new_full(561_528u32, 1 ),
                 QueryWord::new_full(1u32,       0 ),
             ],
         ];
 
-        let results = phrase_set.contains_combinations(variants).unwrap();
+        let results = phrase_set.contains_combinations(variants, 2).unwrap();
 
         assert_eq!(expected_results, results);
-        println!("{:?}", util::three_byte_encode(61_528u32));
-        println!("{:?}", util::three_byte_decode(&[1u8, 240u8, 88u8]));
 
+        // one less result if max_phrase_dist is lowered
+        let variants = vec![
+            vec![
+                QueryWord::new_full(1u32,      1 ),
+                QueryWord::new_full(61_528u32, 0 ),
+                QueryWord::new_full(99_999u32, 0 ),
+            ],
+            vec![
+                QueryWord::new_full(61_528u32,  0 ),
+                QueryWord::new_full(561_528u32, 1 ),
+                QueryWord::new_full(1u32,       0 ),
+            ],
+            vec![
+                QueryWord::new_full(561_528u32, 1 ),
+                QueryWord::new_full(1u32,       0 ),
+                QueryWord::new_full(127_064u32, 0 ),
+            ]
+        ];
+
+        let expected_results = vec![
+            vec![
+                QueryWord::new_full(61_528u32,  0 ),
+                QueryWord::new_full(561_528u32, 1 ),
+                QueryWord::new_full(1u32,       0 ),
+            ],
+        ];
+
+        let results = phrase_set.contains_combinations(variants, 1).unwrap();
+        assert_eq!(expected_results, results);
+
+        // query contains prefix
         let variants = vec![
             vec![
                 QueryWord::new_full(1u32,      0 ),
@@ -769,7 +814,20 @@ mod tests {
             ]
         ];
 
-        let results = phrase_set.contains_combinations(variants).unwrap();
+        let expected_results = vec![
+            vec![
+                QueryWord::new_full(1u32,       0 ),
+                QueryWord::new_full(61_528u32,  0 ),
+                QueryWord::new_prefix((561_520u32, 561_530u32)),
+            ],
+            vec![
+                QueryWord::new_full(61_528u32,  0 ),
+                QueryWord::new_full(561_528u32, 0 ),
+                QueryWord::new_full(1u32,       0 ),
+            ],
+        ];
+
+        let results = phrase_set.contains_combinations(variants, 1).unwrap();
 
         assert_eq!(expected_results, results);
 

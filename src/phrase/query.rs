@@ -52,7 +52,14 @@ impl QueryWord
     }
 }
 
-impl QueryWord {
+impl Default for QueryWord {
+    fn default() -> QueryWord {
+        QueryWord::Full {
+            id: 0,
+            key: [255u8, 255u8, 255u8],
+            edit_distance: 99,
+        }
+    }
 }
 
 impl PartialEq for QueryWord {
@@ -210,7 +217,8 @@ impl<'a> IntoIterator for &'a QueryPhrase<'a> {
 
 
 pub struct QueryLattice {
-    variants: Vec<Vec<QueryWord>>
+    variants: Vec<Vec<QueryWord>>,
+    max_phrase_dist: u8,
 }
 
 // TODO: accumulate edit distance <14-06-18, boblannon> //
@@ -218,13 +226,14 @@ pub struct QueryLattice {
 pub struct QueryLatticeState {
     phrase_position: usize,
     word_position: usize,
+    cumulative_edit_distance: u8,
     word_so_far: Vec<u8>,
     possible_words: Vec<QueryWord>,
 }
 
 impl QueryLattice {
-    pub fn new(variants: Vec<Vec<QueryWord>>) -> Self {
-         QueryLattice{ variants }
+    pub fn new(variants: &Vec<Vec<QueryWord>>, max_phrase_dist: u8) -> Self {
+        QueryLattice{ variants: variants.to_vec(), max_phrase_dist }
     }
 }
 
@@ -234,19 +243,21 @@ impl Automaton for QueryLattice {
     fn start(&self) -> Option<QueryLatticeState> {
         // start the automaton in the first position and with the full list of variants in that
         // position
-        let phrase_position = 0;
-        let word_position = 0;
-        let word_so_far = vec![];
         let possible_words: Vec<QueryWord> = self.variants[0].clone();
-
-        Some(QueryLatticeState { phrase_position, word_position, word_so_far, possible_words })
+        Some(QueryLatticeState {
+            phrase_position: 0,
+            word_position: 0,
+            cumulative_edit_distance: 0,
+            word_so_far: Vec::new(),
+            possible_words
+        })
     }
 
     fn is_match(&self, state: &Option<QueryLatticeState>) -> bool {
         match state {
             &None => return false,
             &Some(ref qls) => {
-                if qls.word_position == 2 && qls.phrase_position == self.variants.len() - 1 {
+                if qls.word_position == 2 && qls.phrase_position == self.variants.len() - 1 && qls.cumulative_edit_distance <= self.max_phrase_dist {
                     return true
                 } else {
                     return false
@@ -259,7 +270,7 @@ impl Automaton for QueryLattice {
         match state {
             &None => { return false },
             &Some(ref qls) => {
-                if qls.possible_words.len() > 0 {
+                if qls.possible_words.len() > 0 && qls.cumulative_edit_distance <= self.max_phrase_dist {
                     return true
                 } else {
                     return false
@@ -269,13 +280,14 @@ impl Automaton for QueryLattice {
     }
 
     fn accept(&self, state: &Option<QueryLatticeState>, byte: u8) -> Option<QueryLatticeState> {
-        let new_phrase_position: usize;
-        let new_word_position: usize;
-        let mut matching_words: Vec<QueryWord> = Vec::new();
         match &state {
             None => return None,
             Some(qls) => {
+                let new_phrase_position: usize;
+                let new_word_position: usize;
+                let mut matching_words: Vec<QueryWord> = Vec::new();
                 let mut new_word_so_far: Vec<u8> = Vec::new();
+                let mut new_cumulative_edit_distance = qls.cumulative_edit_distance;
                 new_word_so_far.extend_from_slice(&qls.word_so_far[..]);
                 new_word_so_far.push(byte);
                 for i in 0..qls.possible_words.len() {
@@ -286,7 +298,7 @@ impl Automaton for QueryLattice {
                                 matching_words.push(*word);
                             }
                         },
-                        QueryWord::Prefix { key_range, .. } => { 
+                        QueryWord::Prefix { key_range, .. } => {
                             let min_cmp: Vec<u8> = Vec::from(&key_range.0[..qls.word_position+1]);
                             let max_cmp: Vec<u8> = Vec::from(&key_range.1[..qls.word_position+1]);
                             if (min_cmp <= new_word_so_far) && (new_word_so_far <= max_cmp) {
@@ -297,8 +309,17 @@ impl Automaton for QueryLattice {
                 }
                 if matching_words.len() > 0 {
                     let mut new_possible_words: Vec<QueryWord>;
-                    // if we're at the end of a word
                     if qls.word_position == 2 {
+                        // if we're at the end of a word there should be at most one full word, so
+                        // update the cumulative edit distance
+                        for matching_word in &matching_words {
+                            match matching_word {
+                                QueryWord::Full { edit_distance, .. } => {
+                                    new_cumulative_edit_distance += edit_distance;
+                                },
+                                _ => {},
+                            }
+                        }
                         if qls.phrase_position == self.variants.len() - 1 {
                             // if we're at the end of the phrase, stay there and pass along the
                             // matching words
@@ -323,8 +344,10 @@ impl Automaton for QueryLattice {
                     return Some(QueryLatticeState {
                         phrase_position: new_phrase_position,
                         word_position: new_word_position,
+                        cumulative_edit_distance: new_cumulative_edit_distance,
                         possible_words: new_possible_words,
-                        word_so_far: new_word_so_far
+                        word_so_far: new_word_so_far,
+
                     })
                 } else {
                     return None
