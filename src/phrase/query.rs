@@ -1,4 +1,5 @@
 use super::util;
+use super::WordKey;
 use fst::Automaton;
 use std::cmp::PartialEq;
 // TODO: create key type [u8;3] <14-06-18, boblannon> //
@@ -10,7 +11,7 @@ pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
         id: u32,
-        key: [u8; 3],
+        key: WordKey,
         edit_distance: u8,
     },
 
@@ -18,12 +19,13 @@ pub enum QueryWord {
     /// which of identifiers.
     Prefix {
         id_range: (u32, u32),
+        key_range: (WordKey, WordKey),
     },
 }
 
 impl QueryWord
 {
-    
+
     pub fn new_full(id:u32, edit_distance:u8) -> QueryWord {
         let key: [u8; 3] = util::three_byte_encode(id);
         QueryWord::Full { id, edit_distance, key }
@@ -148,7 +150,7 @@ impl<'a> QueryPhrase<'a> {
             match word {
                 QueryWord::Full{ ref id, .. } => {
                     let three_bytes = util::three_byte_encode(*id);
-                    full_word_key.extend(three_bytes);
+                    full_word_key.extend_from_slice(&three_bytes);
                 },
                 _ => (),
             }
@@ -157,17 +159,13 @@ impl<'a> QueryPhrase<'a> {
     }
 
     /// Generate a key from the prefix range
-    pub fn prefix_key_range(&self) -> Option<(Vec<u8>, Vec<u8>)> {
-        let prefix_range = match self.words[self.length - 1] {
-            QueryWord::Prefix{ ref id_range, .. } => {
-                *id_range
+    pub fn prefix_key_range(&self) -> Option<(WordKey, WordKey)> {
+        match self.words[self.length - 1] {
+            QueryWord::Prefix{ ref key_range, .. } => {
+                return Some(*key_range)
             },
             _ => return None,
         };
-        let prefix_start_key = util::three_byte_encode(prefix_range.0);
-        let prefix_end_key = util::three_byte_encode(prefix_range.1);
-
-        Some((prefix_start_key, prefix_end_key))
     }
 
     /// Generate a key from the prefix range
@@ -220,8 +218,8 @@ pub struct QueryLattice {
 // TODO: get rid of possibleword, use queryword directly <14-06-18, boblannon> //
 #[derive(Debug)]
 enum PossibleWord {
-    Key(Vec<u8>),
-    KeyRange { min: Vec<u8>, max: Vec<u8> },
+    Key(WordKey),
+    KeyRange { min: WordKey, max: WordKey },
 }
 
 // TODO: accumulate edit distance <14-06-18, boblannon> //
@@ -251,14 +249,11 @@ impl Automaton for QueryLattice {
         let mut possible_words: Vec<PossibleWord> = Vec::new();
         for word in &self.variants[0][..] {
             match word {
-                &QueryWord::Full {id, ..} => {
-                    let key = util::three_byte_encode(id);
+                &QueryWord::Full {key, ..} => {
                     possible_words.push(PossibleWord::Key(key) );
                 },
-                &QueryWord::Prefix {id_range, ..} => {
-                    let min = util::three_byte_encode(id_range.0);
-                    let max = util::three_byte_encode(id_range.1);
-                    possible_words.push(PossibleWord::KeyRange{min, max});
+                &QueryWord::Prefix {key_range, ..} => {
+                    possible_words.push(PossibleWord::KeyRange{min: key_range.0, max: key_range.1});
                 }
             }
         }
@@ -308,16 +303,14 @@ impl Automaton for QueryLattice {
                     match word {
                         PossibleWord::Key(word_key) => {
                             if word_key[qls.word_position] == byte {
-                                matching_words.push(PossibleWord::Key(Vec::from(&word_key[..])));
+                                matching_words.push(PossibleWord::Key(*word_key));
                             }
                         },
                         PossibleWord::KeyRange {min, max} => {
                             let min_cmp = Vec::from(&min[..qls.word_position+1]);
                             let max_cmp = Vec::from(&max[..qls.word_position+1]);
                             if (min_cmp <= new_word_so_far) && (new_word_so_far <= max_cmp) {
-                                let min_key = Vec::from(&min[..]);
-                                let max_key = Vec::from(&max[..]);
-                                matching_words.push(PossibleWord::KeyRange{min: min_key, max: max_key});
+                                matching_words.push(PossibleWord::KeyRange{min: *min, max: *max});
                             }
                         }
                     }
@@ -381,16 +374,16 @@ mod tests {
 
     #[test]
     fn query_word_partial_eq() {
-        let word =  QueryWord::Full{ id: 1u32, edit_distance: 0 };
-        let matching_word = QueryWord::Full{ id: 1u32, edit_distance: 0 };
-        let nonmatching_word = QueryWord::Full{ id: 2u32, edit_distance: 0 };
+        let word =  QueryWord::new_full(1u32, 0);
+        let matching_word = QueryWord::new_full(1u32, 0);
+        let nonmatching_word = QueryWord::new_full(2u32, 0);
 
         assert!(word != nonmatching_word);
         assert!(word == matching_word);
 
-        let prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
-        let matching_prefix = QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) };
-        let nonmatching_prefix = QueryWord::Prefix{ id_range: (1u32, 561_531u32) };
+        let prefix = QueryWord::new_prefix((561_528u32, 561_531u32));
+        let matching_prefix = QueryWord::new_prefix((561_528u32, 561_531u32));
+        let nonmatching_prefix = QueryWord::new_prefix((1u32, 561_531u32));
 
         assert!(word != prefix);
         assert!(prefix == matching_prefix);
@@ -405,7 +398,7 @@ mod tests {
         id_to_string_map.insert(61_528u32, String::from("main"));
         id_to_string_map.insert(561_528u32, String::from("st"));
 
-        let query_word = QueryWord::Full{ id: 61_528u32, edit_distance: 0 };
+        let query_word = QueryWord::new_full(61_528u32, 0);
 
         let id_to_string_closure = |id: u32| id_to_string_map.get(&id).unwrap().as_str();
 
@@ -416,9 +409,9 @@ mod tests {
     #[test]
     fn phrase_from_words() {
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 0 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
-            QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+            QueryWord::new_full(1u32, 0),
+            QueryWord::new_full(61_528u32, 0),
+            QueryWord::new_full(561_528u32, 0),
         ];
 
         let phrase = QueryPhrase::new(&words).unwrap();
@@ -447,11 +440,11 @@ mod tests {
     fn phrase_multiple_combinations() {
         // three words, two variants for third word
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::new_full(1u32, 0) ],
+            vec![ QueryWord::new_full(61_528u32, 0) ],
             vec![
-                QueryWord::Full{ id: 561_235u32, edit_distance: 0 },
-                QueryWord::Full{ id: 561_247u32, edit_distance: 2 },
+                QueryWord::new_full(561_235u32, 0),
+                QueryWord::new_full(561_247u32, 2),
             ],
         ];
 
@@ -519,8 +512,8 @@ mod tests {
     fn two_fuzzy_matches() {
 
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 1 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 2 },
+            QueryWord::new_full(1u32, 1),
+            QueryWord::new_full(61_528u32, 2),
         ];
         let phrase = QueryPhrase::new(&words).unwrap();
 
@@ -563,9 +556,9 @@ mod tests {
     fn two_exact_matches_one_prefix() {
 
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 0 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
-            QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) },
+            QueryWord::new_full(1u32, 0),
+            QueryWord::new_full(61_528u32, 0),
+            QueryWord::new_prefix((561_528u32, 561_531u32)),
         ];
         let phrase = QueryPhrase::new(&words).unwrap();
 
@@ -581,8 +574,8 @@ mod tests {
 
         assert_eq!(
             Some((
-                vec![ 8u8, 145u8, 120u8],     // 561_528
-                vec![ 8u8, 145u8, 123u8],     // 561_531
+                [ 8u8, 145u8, 120u8],     // 561_528
+                [ 8u8, 145u8, 123u8],     // 561_531
             )),
             phrase.prefix_key_range()
         );
@@ -632,9 +625,9 @@ mod tests {
     fn non_terminal_prefix() {
 
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 0 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
-            QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) },
+            QueryWord::new_full(1u32, 0),
+            QueryWord::new_full(61_528u32, 0),
+            QueryWord::new_prefix((561_528u32, 561_531u32)),
         ];
         let word_seq = [ words[0], words[2], words[1] ];
         QueryPhrase::new(&word_seq).unwrap();

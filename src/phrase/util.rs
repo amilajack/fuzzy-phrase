@@ -13,7 +13,8 @@ pub fn chop_int(num: u32) -> Vec<u8> {
 pub fn three_byte_encode(num: u32) -> WordKey {
     debug_assert!(num < 16_777_216);
     let chopped: Vec<u8> = chop_int(num);
-    let three_bytes: WordKey = chopped[1..4];
+    let mut three_bytes: WordKey = Default::default();
+    three_bytes.copy_from_slice(&chopped[1..4]);
     three_bytes
 }
 
@@ -25,9 +26,12 @@ pub fn three_byte_decode(three_bytes: &[u8]) -> u32 {
 }
 
 pub fn word_ids_to_key(phrase: &[u32]) -> Vec<u8> {
-    phrase.into_iter()
-          .flat_map(|word| three_byte_encode(*word))
-          .collect()
+    let mut phrase_key: Vec<u8> = Vec::new();
+    for word_id in phrase {
+        let word_key: WordKey = three_byte_encode(*word_id);
+        phrase_key.extend_from_slice(&word_key);
+    }
+    phrase_key
 }
 
 pub fn key_to_word_ids(key: &[u8]) -> Vec<u32> {
@@ -104,7 +108,7 @@ mod tests {
     fn medium_integer_to_three_bytes() {
         // the number we're using is arbitrary.
         let n: u32 = 61_528;
-        let three_bytes: Vec<u8> = three_byte_encode(n);
+        let three_bytes: WordKey = three_byte_encode(n);
         assert_eq!(
             vec![ 0u8, 240u8, 88u8],
             three_bytes
@@ -116,7 +120,7 @@ mod tests {
         // the number we're using is arbitrary. happens to be the number of distinct words in
         // us-address, so gives us an idea of the cardinality we're dealing with.
         let n: u32 = 561_528;
-        let three_bytes: Vec<u8> = three_byte_encode(n);
+        let three_bytes: WordKey = three_byte_encode(n);
         assert_eq!(
             vec![ 8u8, 145u8, 120u8],
             three_bytes
