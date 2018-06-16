@@ -2,7 +2,6 @@ use criterion::{Criterion, Fun, Bencher};
 use fuzzy_phrase::glue::*;
 use test_utils::*;
 use std::rc::Rc;
-use itertools;
 use tempfile;
 use rand;
 use rand::Rng;
@@ -38,7 +37,7 @@ pub fn benchmark(c: &mut Criterion) {
     // the copy will the get moved into the closure, but the original will stick around to be
     // copied for the next one
     let data = shared_data.clone();
-    to_bench.push(Fun::new("fuzzy_match", move |b: &mut Bencher, _i| {
+    to_bench.push(Fun::new("fuzzy_match_full_success", move |b: &mut Bencher, _i| {
         let mut damaged_phrases: Vec<String> = Vec::with_capacity(1000);
         let mut rng = rand::thread_rng();
 
@@ -57,7 +56,7 @@ pub fn benchmark(c: &mut Criterion) {
     // data is shadowed here for ease of copying and pasting, but this is a new clone
     // (again, same data, new reference, because it's an Rc)
     let data = shared_data.clone();
-    to_bench.push(Fun::new("fuzzy_match_prefix", move |b: &mut Bencher, _i| {
+    to_bench.push(Fun::new("fuzzy_match_prefix_success", move |b: &mut Bencher, _i| {
         let mut damaged_phrases: Vec<String> = Vec::with_capacity(1000);
         let mut rng = rand::thread_rng();
 
@@ -74,7 +73,7 @@ pub fn benchmark(c: &mut Criterion) {
     }));
 
     let data = shared_data.clone();
-    to_bench.push(Fun::new("fuzzy_match_failed_lt_latn", move |b: &mut Bencher, _i| {
+    to_bench.push(Fun::new("fuzzy_match_lt_latn_failure", move |b: &mut Bencher, _i| {
         let lt_data = get_data("phrase", "lt", "lt", "latn", true);
         let mut cycle = lt_data.iter().cycle();
 
@@ -82,7 +81,7 @@ pub fn benchmark(c: &mut Criterion) {
     }));
 
     let data = shared_data.clone();
-    to_bench.push(Fun::new("fuzzy_match_failed_ua_cyrl", move |b: &mut Bencher, _i| {
+    to_bench.push(Fun::new("fuzzy_match_ua_cyrl_failure", move |b: &mut Bencher, _i| {
         let ua_data = get_data("phrase", "ua", "uk", "cyrl", true);
         let mut cycle = ua_data.iter().cycle();
 
@@ -90,7 +89,7 @@ pub fn benchmark(c: &mut Criterion) {
     }));
 
     let data = shared_data.clone();
-    to_bench.push(Fun::new("fuzzy_match_failed_short_garbage", move |b: &mut Bencher, _i| {
+    to_bench.push(Fun::new("fuzzy_match_short_garbage_failure", move |b: &mut Bencher, _i| {
         let mut garbage_phrases: Vec<String> = Vec::with_capacity(1000);
         for _i in 0..1000 {
             garbage_phrases.push(get_garbage_phrase((2, 10), (2, 10)));
@@ -102,7 +101,7 @@ pub fn benchmark(c: &mut Criterion) {
     }));
 
     let data = shared_data.clone();
-    to_bench.push(Fun::new("fuzzy_match_failed_long_garbage", move |b: &mut Bencher, _i| {
+    to_bench.push(Fun::new("fuzzy_match_long_garbage_failure", move |b: &mut Bencher, _i| {
         let mut garbage_phrases: Vec<String> = Vec::with_capacity(1000);
         for _i in 0..1000 {
             garbage_phrases.push(get_garbage_phrase((8, 12), (100, 200)));
