@@ -10,24 +10,32 @@ use std::cmp::min;
 /// 1, d(AC, ABC) == 1, but d(CA, ABC) == 3. In return, however, it's significantly faster than
 /// regular D-L.
 ///
-/// This implementation is inspired pretty directly by the pseudocode here:
+/// This implementation is takes a mix of inspirations, including from the
+/// pseudocode here:
 /// https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance#Optimal_string_alignment_distance
-/// plus some alterations to avoid work repetition when comparing the same target string to
-/// multiple different candidate matches, as we do in the context of Symspell lookups. It avoids
-/// repeating Unicode parses if possible, and also reuses the main distance matrix across multiple
-/// sets of comparisons. This distance matrix is a ~len(a)*len(b) matrix, modeled in, e.g.,
-/// simstring, as a vector of vectors, but here we emulate a 2D matrix using a single linear vector
-/// to improve spatial locality and reduce allocations. Further, we can see that matrix is
-/// initially constructed with 0..len(a) along the top row and 0..len(b) along the first column,
-/// and these values never change over the course of the run of the algorithm, and further that the
-/// remaining cells are filled in in order from top left to bottom right, looking only at
-/// already-filled in cells to do so. Finally, noßthing bad happens if the matrix is oversized; we
-/// just don't end up consulting some rows. This means if we're doing multiple matches, we can
-/// construct a single vector up front that's big enough for the biggest word (so, max candidate
-/// length * target length) and populate the first row and (simulated) first column, and then reuse
-/// it for all of the words we're checking.
+/// and also a strategy for only keeping the last three rows rather than the whole matrix, which
+/// appears in several implementations including the osa_distance implementation in simstring, plus
+/// some alterations to avoid work repetition when comparing the same target string to multiple
+/// different candidate matches, as we do in the context of Symspell lookups. It avoids repeating
+/// Unicode parses if possible, and also reuses vectors to store distance information across
+/// multiple candidate words. The traditional implementation requires maintaining a len(a)*len(b)
+/// matrix across all comparisons, but in fact only the most recently touched three rows of that
+/// matrix are necessary, and they can be shifted/reused to avoid requiring fresh allocations.
+/// Further, we can choose which of the two words we're comparing dictates our row size, and if we
+/// choose the target word, the vectors can stay the same size across all candidate words.
 
+#[allow(dead_code)]
+#[inline(always)]
 pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32> {
+    multi_modified_damlev_hint(target, sources, u32::max_value())
+}
+
+/// This is a variant of the main D-L function with slightly relaxed guarantees: you supply a hint
+/// for the maximum distance you care about, and for any pairs that are farther apart than that,
+/// you're guaranteed a result that's greater than your hinted max, but it might not be the actual
+/// distance.
+
+pub fn multi_modified_damlev_hint<T: AsRef<str>>(target: T, sources: &[T], max_hint: u32) -> Vec<u32> {
     let t_chars: Vec<char> = target.as_ref().chars().collect();
     let t_len = t_chars.len();
 
@@ -35,36 +43,16 @@ pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32
         return sources.iter().map(|s| s.as_ref().chars().count() as u32).collect();
     }
 
-    let mut max_s_len = 0;
-    let s_count = sources.len();
-    let mut s_char_vec: Vec<Vec<char>> = Vec::with_capacity(s_count);
+    let width = t_len + 1;
+    let mut cur_row: Vec<u32> = vec![0; width];
+    let mut prev_row: Vec<u32> = vec![0; width];
+    let mut prev2_row: Vec<u32> = vec![0; width];
+
+    let mut out: Vec<u32> = Vec::with_capacity(sources.as_ref().len());
+    let mut s_chars: Vec<char> = Vec::with_capacity(t_len + 1);
     for s in sources {
-        let s_chars: Vec<char> = s.as_ref().chars().collect();
-        let s_len = s_chars.len();
-        if s_len > max_s_len {
-            max_s_len = s_len;
-        }
-        s_char_vec.push(s_chars);
-    }
-
-    let d_width = t_len + 1;
-    let d_height = max_s_len + 1;
-    let mut d: Vec<u32> = vec![0; d_width * d_height];
-    // we're going to want to be able to pretend to do lookups like d[x][y] even though d is
-    // actually 1-dimensional, so this is a handly closure to do that
-    let idx = |x, y| x + (y * d_width);
-
-    for i in 0..=t_len {
-        // we're conceptually setting d[i,0] but that's equivalent to d[i]
-        d[i] = i as u32;
-    }
-    for j in 0..=max_s_len {
-        // conceptually d[0,j] but we'll skip the useless addition
-        d[j*d_width] = j as u32;
-    }
-
-    let mut out: Vec<u32> = Vec::with_capacity(s_count);
-    for s_chars in s_char_vec {
+        s_chars.clear();
+        s_chars.extend(s.as_ref().chars());
         let s_len = s_chars.len();
 
         if t_chars == s_chars {
@@ -75,22 +63,41 @@ pub fn multi_modified_damlev<T: AsRef<str>>(target: T, sources: &[T]) -> Vec<u32
             continue;
         }
 
-        for i in 1..=t_len {
-            for j in 1..=s_len {
-                let cost = if t_chars[i - 1] == s_chars[j - 1] { 0 } else { 1 };
-                d[idx(i, j)] = min(
-                    d[idx(i-1, j)] + 1,         // deletion
+        prev_row.clear();
+        prev_row.extend(0u32..(width as u32));
+
+        for i in 1..=s_len {
+            let mut row_min = u32::max_value();
+            cur_row[0] = i as u32;
+            for j in 1..=t_len {
+                let cost = if s_chars[i - 1] == t_chars[j - 1] { 0 } else { 1 };
+                let mut current = min(
+                    prev_row[j] + 1,           // deletion
                     min(
-                        d[idx(i, j-1)] + 1,     // insertion
-                        d[idx(i-1, j-1)] + cost // substitution
+                        cur_row[j - 1] + 1,    // insertion
+                        prev_row[j - 1] + cost // substitution
                     )
                 );
-                if i > 1 && j > 1 && t_chars[i-1] == s_chars[j-2] && t_chars[i-2] == s_chars[j-1] {
-                    d[idx(i, j)] = min(d[idx(i, j)], d[idx(i-2, j-2)] + cost);  // transposition
+                if i > 1 && j > 1 && s_chars[i-1] == t_chars[j-2] && s_chars[i-2] == t_chars[j-1] {
+                    current = min(current, prev2_row[j-2] + cost);  // transposition
                 }
+                if current < row_min {
+                    row_min = current;
+                }
+                cur_row[j] = current;
+            }
+
+            let tmp = prev2_row;
+            prev2_row = prev_row;
+            prev_row = cur_row;
+            cur_row = tmp;
+
+            if row_min > max_hint {
+                prev_row[t_len] = row_min;
+                break;
             }
         }
-        out.push(d[idx(t_len, s_len)]);
+        out.push(prev_row[t_len]);
     }
     out
 }
@@ -194,5 +201,19 @@ mod tests {
             vec![0, 1, 2, 3, 6, 7],
             multi_modified_damlev("damerau", &["damerau", "domerau", "domera", "aderua", "aderuaxyz", ""])
         );
+    }
+
+    #[test]
+    fn mmd_multi_hint() {
+        let max_hint = 1;
+        let unhinted = multi_modified_damlev("damerau", &["damerau", "domerau", "domera", "aderua", "aderuaxyz", ""]);
+        let hinted = multi_modified_damlev_hint("damerau", &["damerau", "domerau", "domera", "aderua", "aderuaxyz", ""], 1);
+        for i in 0..unhinted.len() {
+            if unhinted[i] <= max_hint {
+                assert_eq!(unhinted[i], hinted[i]);
+            } else {
+                assert!(hinted[i] > max_hint);
+            }
+        }
     }
 }

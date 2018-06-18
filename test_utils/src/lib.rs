@@ -5,8 +5,10 @@ extern crate itertools;
 
 use std::path::{Path, PathBuf};
 use rand::Rng;
-use std::io;
+use rand::distributions::Alphanumeric;
+use std::io::{self, BufRead};
 use std::fs;
+use std::iter;
 use libflate::gzip::Decoder;
 
 static TMP: &'static str = "/tmp/fuzzy_phrase";
@@ -29,6 +31,17 @@ pub fn ensure_data(data_type: &str, country: &str, language: &str, script: &str,
 
     io::copy(&mut decoder, &mut wtr).unwrap();
     path
+}
+
+pub fn get_data(data_type: &str, country: &str, language: &str, script: &str, sample: bool) -> Vec<String> {
+    let test_data = ensure_data(data_type, country, language, script, sample);
+
+    let file = fs::File::open(test_data).unwrap();
+    let file = io::BufReader::new(file);
+    file.lines().filter_map(|l| match l.unwrap() {
+        ref t if t.len() == 0 => None,
+        t => Some(t),
+    }).collect::<Vec<String>>()
 }
 
 pub fn damage_word(word: &str) -> String {
@@ -180,4 +193,19 @@ pub fn get_damaged_prefix<F>(phrase: &str, can_damage: F) -> String where
         }
     }).collect::<Vec<&str>>();
     itertools::join(new_words, " ")
+}
+
+pub fn get_garbage_phrase(phrase_len_range: (usize, usize), word_len_range: (usize, usize)) -> String {
+    let mut rng = rand::thread_rng();
+    let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    let phrase_len: usize = rng.gen_range(phrase_len_range.0, phrase_len_range.1);
+    let mut phrase: Vec<String> = Vec::with_capacity(phrase_len);
+    for _j in 0..phrase_len {
+        let word_len: usize = rng.gen_range(word_len_range.0, word_len_range.1);
+        phrase.push(iter::repeat(()).map(|()| {
+            *rng.choose(letters.as_bytes()).unwrap() as char
+        }).take(word_len).collect());
+    }
+    itertools::join(phrase, " ")
 }

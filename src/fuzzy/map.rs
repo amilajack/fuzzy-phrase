@@ -1,8 +1,7 @@
 use fst::{IntoStreamer, Streamer, Automaton};
 use std::fs;
-use std::iter;
 use std::error::Error;
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use itertools::Itertools;
 use fst::raw;
 use fst::Error as FstError;
@@ -15,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
 #[cfg(test)] extern crate reqwest;
 
-use fuzzy::util::multi_modified_damlev;
+use fuzzy::util::multi_modified_damlev_hint;
 
 static MULTI_FLAG: u64 = 1 << 63;
 static MULTI_MASK: u64 = !(1 << 63);
@@ -90,25 +89,72 @@ impl FuzzyMap {
         self.fst.get(key).map(|output| output.value())
     }
 
+    fn find_matching_variants(&self, query: &[u8], indices: &[usize], position: usize, edit_distance: usize, node: &raw::Node, so_far: u64, out: &mut Vec<u64>) {
+        if (indices.len() - 1 - position) <= edit_distance {
+            // we're to the end of our string or within the edit distance
+            // so if we're on a final string, emit output
+            if node.is_final() {
+                out.push(so_far + node.final_output().value());
+            }
+        }
+
+        for i in position..min(position + edit_distance + 1, indices.len() - 1) {
+            let mut found = true;
+            let mut search_node = node.to_owned();
+            let mut search_output = 0;
+            for byte in &query[indices[i]..indices[i+1]] {
+                if let Some(x) = search_node.find_input(*byte) {
+                    let trans = search_node.transition(x);
+                    search_output += trans.out.value();
+                    search_node = self.fst.node(trans.addr);
+                } else {
+                    found = false;
+                    break;
+                }
+            }
+            if found {
+                self.find_matching_variants(query, indices, i + 1, edit_distance - (i - position), &search_node, so_far + search_output, out);
+            }
+        }
+    }
+
+    fn find_matching_variants_ascii(&self, query: &[u8], position: usize, edit_distance: usize, node: &raw::Node, so_far: u64, out: &mut Vec<u64>) {
+        if (query.len() - position) <= edit_distance {
+            // we're to the end of our string or within the edit distance
+            // so if we're on a final string, emit output
+            if node.is_final() {
+                out.push(so_far + node.final_output().value());
+            }
+        }
+
+        for i in position..min(position + edit_distance + 1, query.len()) {
+            if let Some(x) = node.find_input(query[i]) {
+                let trans = node.transition(x);
+                self.find_matching_variants_ascii(query, i + 1, edit_distance - (i - position), &self.fst.node(trans.addr), so_far + trans.out.value(), out);
+            }
+        }
+    }
+
     pub fn lookup<'a, F>(&self, query: &str, edit_distance: u8, lookup_fn: F) -> Result<Vec<FuzzyMapLookupResult>, Box<Error>> where F: Fn(u32) -> &'a str {
         let mut matches = Vec::<u32>::new();
 
-        let variants = super::get_variants(&query, edit_distance);
+        let mut variant_ids: Vec<u64> = Vec::new();
+        if query.is_ascii() {
+            self.find_matching_variants_ascii(query.as_bytes(), 0, edit_distance as usize, &self.fst.root(), 0, &mut variant_ids);
+        } else {
+            let mut query_indices = query.char_indices().map(|(i, _c)| i).collect::<Vec<_>>();
+            query_indices.push(query.len());
+            self.find_matching_variants(query.as_bytes(), &query_indices, 0, edit_distance as usize, &self.fst.root(), 0, &mut variant_ids);
+        }
 
         // check the query itself and the variants
-        for i in iter::once(query).chain(variants.iter().map(|a| a.as_str())) {
-            match self.fst.get(&i) {
-                Some (idx) => {
-                    let uidx = idx.value();
-                    if uidx & MULTI_FLAG != 0 {
-                        for x in &(self.id_list)[(uidx & MULTI_MASK) as usize] {
-                            matches.push(*x as u32);
-                        }
-                    } else {
-                        matches.push(uidx as u32);
-                    }
+        for uidx in variant_ids {
+            if uidx & MULTI_FLAG != 0 {
+                for x in &(self.id_list)[(uidx & MULTI_MASK) as usize] {
+                    matches.push(*x as u32);
                 }
-                None => {}
+            } else {
+                matches.push(uidx as u32);
             }
         }
         //return all ids that match
@@ -116,7 +162,7 @@ impl FuzzyMap {
         matches.dedup();
 
         let match_words = matches.iter().map(|id| lookup_fn(*id)).collect::<Vec<_>>();
-        let distances = multi_modified_damlev(query, &match_words);
+        let distances = multi_modified_damlev_hint(query, &match_words, edit_distance as u32);
 
         let mut out = matches
             .into_iter()
@@ -269,6 +315,7 @@ impl<'s, 'a, A: Automaton> IntoStreamer<'a> for StreamBuilder<'s, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuzzy::util::multi_modified_damlev;
 
     #[test]
     fn lookup_test_cases_d_1() {

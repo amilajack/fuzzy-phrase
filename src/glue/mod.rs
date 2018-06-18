@@ -15,7 +15,7 @@ use ::fuzzy::{FuzzyMap, FuzzyMapBuilder};
 use regex;
 
 pub mod unicode_ranges;
-static NUM_PATTERN: &'static str = r"[0-9#]+";
+mod util;
 
 #[derive(Default, Debug)]
 pub struct FuzzyPhraseSetBuilder {
@@ -105,10 +105,9 @@ impl FuzzyPhraseSetBuilder {
         let allowed_scripts = &metadata.fuzzy_enabled_scripts.iter().map(
             |s| unicode_ranges::get_script_by_name(s)
         ).collect::<Option<Vec<_>>>().ok_or("unknown script")?;
-        let fuzzy_regset = regex::RegexSet::new(&[
-            NUM_PATTERN,
+        let script_regex = regex::Regex::new(
             &unicode_ranges::get_pattern_for_scripts(&allowed_scripts),
-        ]).unwrap();
+        ).unwrap();
 
         // words_to_tmpids is a btreemap over word keys,
         // so when we iterate over it, we'll get back words sorted
@@ -121,14 +120,7 @@ impl FuzzyPhraseSetBuilder {
 
             prefix_set_builder.insert(word)?;
 
-            let allowed = match fuzzy_regset.matches(word) {
-                // numbers always fail
-                ref r if r.matched(0) => false,
-                // if it's not a number and is entirely in an allowed script, succeed
-                ref r if r.matched(1) => true,
-                // otherwise fail
-                _ => false,
-            };
+            let allowed = util::can_fuzzy_match(word, &script_regex);
 
             if allowed {
                 fuzzy_map_builder.insert(word, id);
@@ -170,7 +162,7 @@ pub struct FuzzyPhraseSet {
     phrase_set: PhraseSet,
     fuzzy_map: FuzzyMap,
     word_list: Vec<String>,
-    fuzzy_regset: regex::RegexSet,
+    script_regex: regex::Regex,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -200,10 +192,9 @@ impl FuzzyPhraseSet {
         let allowed_scripts = &metadata.fuzzy_enabled_scripts.iter().map(
             |s| unicode_ranges::get_script_by_name(s)
         ).collect::<Option<Vec<_>>>().ok_or("unknown script")?;
-        let fuzzy_regset = regex::RegexSet::new(&[
-            NUM_PATTERN,
+        let script_regex = regex::Regex::new(
             &unicode_ranges::get_pattern_for_scripts(&allowed_scripts),
-        ]).unwrap();
+        ).unwrap();
 
         let prefix_path = directory.join(Path::new("prefix.fst"));
         if !prefix_path.exists() {
@@ -233,18 +224,11 @@ impl FuzzyPhraseSet {
         let fuzzy_path = directory.join(Path::new("fuzzy"));
         let fuzzy_map = unsafe { FuzzyMap::from_path(&fuzzy_path) }?;
 
-        Ok(FuzzyPhraseSet { prefix_set, phrase_set, fuzzy_map, word_list, fuzzy_regset })
+        Ok(FuzzyPhraseSet { prefix_set, phrase_set, fuzzy_map, word_list, script_regex })
     }
 
     pub fn can_fuzzy_match(&self, word: &str) -> bool {
-        match self.fuzzy_regset.matches(word) {
-            // numbers always fail
-            ref r if r.matched(0) => false,
-            // if it's not a number and is entirely in an allowed script, succeed
-            ref r if r.matched(1) => true,
-            // otherwise fail
-            _ => false,
-        }
+        util::can_fuzzy_match(word, &self.script_regex)
     }
 
     pub fn contains(&self, phrase: &[&str]) -> Result<bool, Box<Error>> {
