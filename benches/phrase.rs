@@ -81,7 +81,7 @@ pub fn load_sample<'a>(file_loc: &str, word_to_id: &BTreeMap<String, u32>) -> (V
 
         // build full words out of the ids
         let query_words_full = word_ids.iter()
-            .map(|w| QueryWord::Full{ id: *w, edit_distance: 0})
+            .map(|w| QueryWord::new_full(*w, 0))
             .collect::<Vec<QueryWord>>();
 
         // select a random query length
@@ -131,7 +131,7 @@ pub fn load_sample<'a>(file_loc: &str, word_to_id: &BTreeMap<String, u32>) -> (V
             query_words_prefix.extend_from_slice(&query_words_full[..query_length-2]);
         }
         // push a new prefix onto the end
-        query_words_prefix.push(QueryWord::Prefix{ id_range: ( prefix_id_min, prefix_id_max) });
+        query_words_prefix.push(QueryWord::new_prefix(( prefix_id_min, prefix_id_max)));
 
         sample_full.push(query_words_full);
         sample_prefix.push(query_words_prefix);

@@ -1,4 +1,6 @@
 use super::util;
+use super::WordKey;
+use std::cmp::PartialEq;
 
 /// An abstraction over full words and prefixes.
 #[derive(Copy, Clone, Debug)]
@@ -6,6 +8,7 @@ pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
         id: u32,
+        key: WordKey,
         edit_distance: u8,
     },
 
@@ -13,11 +16,25 @@ pub enum QueryWord {
     /// which of identifiers.
     Prefix {
         id_range: (u32, u32),
+        key_range: (WordKey, WordKey),
     },
 }
 
 impl QueryWord
 {
+
+    pub fn new_full(id:u32, edit_distance:u8) -> QueryWord {
+        let key: [u8; 3] = util::three_byte_encode(id);
+        QueryWord::Full { id, edit_distance, key }
+    }
+
+    pub fn new_prefix(id_range: (u32, u32)) -> QueryWord {
+        let min_key: [u8; 3] = util::three_byte_encode(id_range.0);
+        let max_key: [u8; 3] = util::three_byte_encode(id_range.1);
+        let key_range = (min_key, max_key);
+        QueryWord::Prefix { id_range, key_range }
+    }
+
     pub fn to_string<'a, T:Fn(u32) -> &'a str>(&self, id_to_string: T) -> String {
         match &self {
             &QueryWord::Full {id, ..} => {
@@ -30,6 +47,45 @@ impl QueryWord
                 let s = format!("{}..{}", s_start, s_end);
                 return s
             }
+        }
+    }
+}
+
+impl Default for QueryWord {
+    fn default() -> QueryWord {
+        QueryWord::Full {
+            id: 0,
+            key: [255u8, 255u8, 255u8],
+            edit_distance: 99,
+        }
+    }
+}
+
+impl PartialEq for QueryWord {
+    fn eq(&self, other: &QueryWord) -> bool {
+        match self {
+            QueryWord::Full{ id, .. } => {
+                let my_id = id;
+                match other {
+                    QueryWord::Full{ id, ..} => {
+                        return my_id == id
+                    },
+                    QueryWord::Prefix{..} => {
+                        return false
+                    }
+                }
+            },
+            QueryWord::Prefix{ id_range, ..} => {
+                let my_id_range = id_range;
+                match other {
+                    QueryWord::Full{..} => {
+                        return false
+                    },
+                    QueryWord::Prefix{id_range, ..} => {
+                        return my_id_range == id_range
+                    }
+                }
+            },
         }
     }
 }
@@ -98,7 +154,7 @@ impl<'a> QueryPhrase<'a> {
             match word {
                 QueryWord::Full{ ref id, .. } => {
                     let three_bytes = util::three_byte_encode(*id);
-                    full_word_key.extend(three_bytes);
+                    full_word_key.extend_from_slice(&three_bytes);
                 },
                 _ => (),
             }
@@ -107,17 +163,13 @@ impl<'a> QueryPhrase<'a> {
     }
 
     /// Generate a key from the prefix range
-    pub fn prefix_key_range(&self) -> Option<(Vec<u8>, Vec<u8>)> {
-        let prefix_range = match self.words[self.length - 1] {
-            QueryWord::Prefix{ ref id_range, .. } => {
-                *id_range
+    pub fn prefix_key_range(&self) -> Option<(WordKey, WordKey)> {
+        match self.words[self.length - 1] {
+            QueryWord::Prefix{ ref key_range, .. } => {
+                return Some(*key_range)
             },
             _ => return None,
         };
-        let prefix_start_key = util::three_byte_encode(prefix_range.0);
-        let prefix_end_key = util::three_byte_encode(prefix_range.1);
-
-        Some((prefix_start_key, prefix_end_key))
     }
 
     /// Generate a key from the prefix range
@@ -162,10 +214,29 @@ impl<'a> IntoIterator for &'a QueryPhrase<'a> {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn query_word_partial_eq() {
+        let word =  QueryWord::new_full(1u32, 0);
+        let matching_word = QueryWord::new_full(1u32, 0);
+        let nonmatching_word = QueryWord::new_full(2u32, 0);
+
+        assert!(word != nonmatching_word);
+        assert!(word == matching_word);
+
+        let prefix = QueryWord::new_prefix((561_528u32, 561_531u32));
+        let matching_prefix = QueryWord::new_prefix((561_528u32, 561_531u32));
+        let nonmatching_prefix = QueryWord::new_prefix((1u32, 561_531u32));
+
+        assert!(word != prefix);
+        assert!(prefix == matching_prefix);
+        assert!(prefix != nonmatching_prefix);
+    }
 
     #[test]
     fn query_word_to_string() {
@@ -175,7 +246,7 @@ mod tests {
         id_to_string_map.insert(61_528u32, String::from("main"));
         id_to_string_map.insert(561_528u32, String::from("st"));
 
-        let query_word = QueryWord::Full{ id: 61_528u32, edit_distance: 0 };
+        let query_word = QueryWord::new_full(61_528u32, 0);
 
         let id_to_string_closure = |id: u32| id_to_string_map.get(&id).unwrap().as_str();
 
@@ -186,9 +257,9 @@ mod tests {
     #[test]
     fn phrase_from_words() {
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 0 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
-            QueryWord::Full{ id: 561_528u32, edit_distance: 0 },
+            QueryWord::new_full(1u32, 0),
+            QueryWord::new_full(61_528u32, 0),
+            QueryWord::new_full(561_528u32, 0),
         ];
 
         let phrase = QueryPhrase::new(&words).unwrap();
@@ -217,11 +288,11 @@ mod tests {
     fn phrase_multiple_combinations() {
         // three words, two variants for third word
         let words = vec![
-            vec![ QueryWord::Full{ id: 1u32, edit_distance: 0 } ],
-            vec![ QueryWord::Full{ id: 61_528u32, edit_distance: 0 } ],
+            vec![ QueryWord::new_full(1u32, 0) ],
+            vec![ QueryWord::new_full(61_528u32, 0) ],
             vec![
-                QueryWord::Full{ id: 561_235u32, edit_distance: 0 },
-                QueryWord::Full{ id: 561_247u32, edit_distance: 2 },
+                QueryWord::new_full(561_235u32, 0),
+                QueryWord::new_full(561_247u32, 2),
             ],
         ];
 
@@ -289,8 +360,8 @@ mod tests {
     fn two_fuzzy_matches() {
 
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 1 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 2 },
+            QueryWord::new_full(1u32, 1),
+            QueryWord::new_full(61_528u32, 2),
         ];
         let phrase = QueryPhrase::new(&words).unwrap();
 
@@ -333,9 +404,9 @@ mod tests {
     fn two_exact_matches_one_prefix() {
 
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 0 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
-            QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) },
+            QueryWord::new_full(1u32, 0),
+            QueryWord::new_full(61_528u32, 0),
+            QueryWord::new_prefix((561_528u32, 561_531u32)),
         ];
         let phrase = QueryPhrase::new(&words).unwrap();
 
@@ -351,8 +422,8 @@ mod tests {
 
         assert_eq!(
             Some((
-                vec![ 8u8, 145u8, 120u8],     // 561_528
-                vec![ 8u8, 145u8, 123u8],     // 561_531
+                [ 8u8, 145u8, 120u8],     // 561_528
+                [ 8u8, 145u8, 123u8],     // 561_531
             )),
             phrase.prefix_key_range()
         );
@@ -402,9 +473,9 @@ mod tests {
     fn non_terminal_prefix() {
 
         let words = vec![
-            QueryWord::Full{ id: 1u32, edit_distance: 0 },
-            QueryWord::Full{ id: 61_528u32, edit_distance: 0 },
-            QueryWord::Prefix{ id_range: (561_528u32, 561_531u32) },
+            QueryWord::new_full(1u32, 0),
+            QueryWord::new_full(61_528u32, 0),
+            QueryWord::new_prefix((561_528u32, 561_531u32)),
         ];
         let word_seq = [ words[0], words[2], words[1] ];
         QueryPhrase::new(&word_seq).unwrap();
