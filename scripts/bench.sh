@@ -77,7 +77,7 @@ function run() {
     # this will be used to create filenames ${fbasename}.txt and ${fbasename}_sample.txt
     fbasename="${country}_${language}_${script}"
     echo "running"
-    env PHRASE_BENCH="${TMP}/${type}/${fbasename}" cargo bench -v "${type}"
+    env PHRASE_BENCH="${TMP}/${type}/${fbasename}" cargo bench "${type}"
     exit 0
 }
 
