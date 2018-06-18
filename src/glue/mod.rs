@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
 use std::fs;
+use std::iter;
 use std::cmp::min;
 
 use serde_json;
@@ -419,6 +420,65 @@ impl FuzzyPhraseSet {
         let phrase_v: Vec<&str> = phrase.split(' ').collect();
         self.fuzzy_match_prefix(&phrase_v, max_word_dist, max_phrase_dist)
     }
+
+    pub fn fuzzy_match_windows(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8, as_prefix: bool) {
+        // this is a little different than the regular fuzzy match in that we're considering multiple possible substrings
+        // we'll start by trying to fuzzy-match all the words, but some of those will likely fail -- rather than early-returning
+        // like in regular fuzzy match, we'll keep going but those failed words will effectively wall off possible matching
+        // subphrases from eachother, so we'll end up with multiple candidate subphrases to explore.
+        // (hence the extra nesting -- a list of word sequences, each sequence being a list of word slots, each slot being a
+        // list of fuzzy-match variants)
+        // if phrase.len() == 0 {
+        //     return Ok(Vec::new());
+        // }
+
+        #[derive(Debug)]
+        struct Subquery {
+            start: usize,
+            match_prefix: bool,
+            word_possibilities: Vec<Vec<QueryWord>>
+        }
+        let mut subqueries: Vec<Subquery> = Vec::new();
+
+        let edit_distance = min(max_word_dist, 1);
+
+        let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, Box<Error>>>> = if as_prefix {
+            let last_idx = phrase.len() - 1;
+            let i = phrase[..last_idx].iter().map(
+                |word| self.get_nonterminal_word_possibilities(word, edit_distance)
+            ).chain(iter::once(last_idx).map(
+                |idx| self.get_terminal_word_possibilities(phrase[idx], edit_distance))
+            );
+            Box::new(i)
+        } else {
+            let i = phrase.iter().map(|word| self.get_nonterminal_word_possibilities(word, edit_distance));
+            Box::new(i)
+        };
+
+        let mut sq: Subquery = Subquery { start: 0, match_prefix: false, word_possibilities: Vec::new() };
+        for (i, matches) in seq.chain(iter::once(Ok(None))).enumerate() {
+            match matches.unwrap() {
+                Some(p) => {
+                    sq.word_possibilities.push(p);
+                    if sq.word_possibilities.len() == 1 {
+                        // this was the first thing to be added to this list
+                        sq.start = i;
+                    }
+                }
+                None => {
+                    if sq.word_possibilities.len() > 0 {
+                        // there's something to do
+                        if i == phrase.len() && as_prefix {
+                            sq.match_prefix = true;
+                        }
+                        subqueries.push(sq);
+                        sq = Subquery { start: 0, match_prefix: false, word_possibilities: Vec::new() };
+                    }
+                },
+            }
+        }
+        println!("{:?}", subqueries);
+    }
 }
 
 #[cfg(test)]
@@ -533,6 +593,11 @@ mod tests {
                 FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "str".to_string()], edit_distance: 1 },
             ]
         );
+    }
+
+    #[test]
+    fn glue_fuzzy_match_windows() -> () {
+        SET.fuzzy_match_windows(&["100", "main", "street", "washington", "300"], 1, 1, true);
     }
 }
 
