@@ -352,7 +352,7 @@ impl FuzzyPhraseSet {
             }
         }
 
-        let phrase_matches = self.phrase_set.recursive_match_combinations(word_possibilities, max_phrase_dist)?;
+        let phrase_matches = self.phrase_set.match_combinations(&word_possibilities, max_phrase_dist)?;
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
         for phrase_p in &phrase_matches {
@@ -406,7 +406,7 @@ impl FuzzyPhraseSet {
             None => return Ok(Vec::new()),
         }
 
-        let phrase_matches = self.phrase_set.recursive_match_combinations_as_prefixes(word_possibilities, max_phrase_dist)?;
+        let phrase_matches = self.phrase_set.match_combinations_as_prefixes(&word_possibilities, max_phrase_dist)?;
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
         for phrase_p in &phrase_matches {
@@ -495,8 +495,8 @@ impl FuzzyPhraseSet {
         let mut results: Vec<FuzzyWindowResult> = Vec::new();
         for chunk in subqueries.iter() {
             for i in 0..chunk.word_possibilities.len() {
-                let mut phrase_matches = self.phrase_set.recursive_match_combinations_as_windows(
-                    chunk.word_possibilities[i..].iter().cloned().collect(),
+                let mut phrase_matches = self.phrase_set.match_combinations_as_windows(
+                    &chunk.word_possibilities[i..],
                     max_phrase_dist,
                     chunk.ends_in_prefix
                 )?;

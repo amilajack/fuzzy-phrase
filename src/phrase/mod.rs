@@ -62,9 +62,9 @@ impl PhraseSet {
 
     /// Recursively explore the phrase graph looking for combinations of candidate words to see
     /// which ones match actual phrases in the phrase graph.
-    pub fn recursive_match_combinations(
+    pub fn match_combinations(
         &self,
-        word_possibilities: Vec<Vec<QueryWord>>,
+        word_possibilities: &[Vec<QueryWord>],
         max_phrase_dist: u8
     ) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
         // this is just a thin wrapper around a private recursive function, with most of the
@@ -72,13 +72,13 @@ impl PhraseSet {
         let fst = self.0.as_fst();
         let root = fst.root();
         let mut out: Vec<Vec<QueryWord>> = Vec::new();
-        self.exact_recurse(&word_possibilities, 0, &root, max_phrase_dist, Vec::new(), &mut out)?;
+        self.exact_recurse(word_possibilities, 0, &root, max_phrase_dist, Vec::new(), &mut out)?;
         Ok(out)
     }
 
     fn exact_recurse(
         &self,
-        possibilities: &Vec<Vec<QueryWord>>,
+        possibilities: &[Vec<QueryWord>],
         position: usize,
         node: &Node,
         budget_remaining: u8,
@@ -137,9 +137,9 @@ impl PhraseSet {
 
     /// Recursively explore the phrase graph looking for combinations of candidate words to see
     /// which ones match prefixes of actual phrases in the phrase graph.
-    pub fn recursive_match_combinations_as_prefixes(
+    pub fn match_combinations_as_prefixes(
         &self,
-        word_possibilities: Vec<Vec<QueryWord>>,
+        word_possibilities: &[Vec<QueryWord>],
         max_phrase_dist: u8
     ) -> Result<Vec<Vec<QueryWord>>, PhraseSetError> {
         // this is just a thin wrapper around a private recursive function, with most of the
@@ -147,13 +147,13 @@ impl PhraseSet {
         let fst = self.0.as_fst();
         let root = fst.root();
         let mut out: Vec<Vec<QueryWord>> = Vec::new();
-        self.prefix_recurse(&word_possibilities, 0, &root, max_phrase_dist, Vec::new(), &mut out)?;
+        self.prefix_recurse(word_possibilities, 0, &root, max_phrase_dist, Vec::new(), &mut out)?;
         Ok(out)
     }
 
     fn prefix_recurse(
         &self,
-        possibilities: &Vec<Vec<QueryWord>>,
+        possibilities: &[Vec<QueryWord>],
         position: usize,
         node: &Node,
         budget_remaining: u8,
@@ -219,9 +219,9 @@ impl PhraseSet {
 
     /// Recursively explore the phrase graph looking for combinations of candidate words to see
     /// which ones match prefixes of actual phrases in the phrase graph.
-    pub fn recursive_match_combinations_as_windows(
+    pub fn match_combinations_as_windows(
         &self,
-        word_possibilities: Vec<Vec<QueryWord>>,
+        word_possibilities: &[Vec<QueryWord>],
         max_phrase_dist: u8,
         ends_in_prefix: bool
     ) -> Result<Vec<(Vec<QueryWord>, bool)>, PhraseSetError> {
@@ -230,13 +230,13 @@ impl PhraseSet {
         let fst = self.0.as_fst();
         let root = fst.root();
         let mut out: Vec<(Vec<QueryWord>, bool)> = Vec::new();
-        self.window_recurse(&word_possibilities, 0, &root, max_phrase_dist, ends_in_prefix, Vec::new(), &mut out)?;
+        self.window_recurse(word_possibilities, 0, &root, max_phrase_dist, ends_in_prefix, Vec::new(), &mut out)?;
         Ok(out)
     }
 
     fn window_recurse(
         &self,
-        possibilities: &Vec<Vec<QueryWord>>,
+        possibilities: &[Vec<QueryWord>],
         position: usize,
         node: &Node,
         budget_remaining: u8,
