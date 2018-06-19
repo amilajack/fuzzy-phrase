@@ -7,6 +7,7 @@ set -eu -o pipefail
 #################################################################################
 
 export TMP=/tmp/fuzzy-phrase-bench
+export TMP_FUZZY=/tmp/fuzzy-map-bench
 export S3_DIR=s3://mapbox/playground/boblannon/fuzzy-phrase/bench
 export S3_FUZZY_DIR=s3://mapbox/playground/aarthykc/fuzzy
 
@@ -20,44 +21,52 @@ export S3_FUZZY_DIR=s3://mapbox/playground/aarthykc/fuzzy
 #
 # ...would download the benchmark data for `phrase/` benchmarks for United
 # States (us), in English (en), in Latin script (latn).
+#
+# For downloading the fuzzy dataset:
+#
+#     ./scripts/bench.sh download fuzzy d1
+#
+# ...would download the benchmark data for `fuzzy` benchmarks for edit_distance 1
+
 function download() {
     type=$1
-    country=$2
-    language=$3
-    script=$4
-    fname="${country}_${language}_${script}.txt.gz"
-    sample_fname="${country}_${language}_${script}_sample.txt.gz"
 
-    mkdir -p "${TMP}/${type}"
+    if [ $1 = "fuzzy" ]; then
+      edit_distance=$2
+      fname="fuzzy_${edit_distance}.txt"
+      mkdir -p "${TMP_FUZZY}/fuzzy"
 
-    FROM="${S3_DIR}/${type}/${fname}"
-    TO="${TMP}/${type}/${fname}"
-    echo "Downloading ${FROM}"
-    aws s3 cp $FROM $TO
-    echo "Extracting ${TO}"
-    gunzip $TO
+      FROM="${S3_FUZZY_DIR}/${fname}"
+      TO="${TMP_FUZZY}/fuzzy/${fname}"
+      echo "Downloading ${FROM}"
+      aws s3 cp $FROM $TO
 
-    FROM="${S3_DIR}/${type}/${sample_fname}"
-    TO="${TMP}/${type}/${sample_fname}"
-    echo "Downloading ${FROM}"
-    aws s3 cp $FROM $TO
-    echo "Extracting ${TO}"
-    gunzip $TO
+    else
+      country=$2
+      language=$3
+      script=$4
+      fname="${country}_${language}_${script}.txt.gz"
+      sample_fname="${country}_${language}_${script}_sample.txt.gz"
+
+      mkdir -p "${TMP}/${type}"
+
+      FROM="${S3_DIR}/${type}/${fname}"
+      TO="${TMP}/${type}/${fname}"
+      echo "Downloading ${FROM}"
+      aws s3 cp $FROM $TO
+      echo "Extracting ${TO}"
+      gunzip $TO
+
+      FROM="${S3_DIR}/${type}/${sample_fname}"
+      TO="${TMP}/${type}/${sample_fname}"
+      echo "Downloading ${FROM}"
+      aws s3 cp $FROM $TO
+      echo "Extracting ${TO}"
+      gunzip $TO
+    fi
     exit 0
 }
 
-function download_fuzzy() {
-    edit_distance=$1
-    fname="fuzzy_${edit_distance}.txt"
-
-    mkdir -p "${TMP}/fuzzy"
-
-    FROM="${S3_FUZZY_DIR}/${fname}"
-    TO="${TMP}/fuzzy/${fname}"
-    echo "Downloading ${FROM}"
-    aws s3 cp $FROM $TO
-    exit 0
-}
 
 #################################################################################
 # Run
@@ -69,24 +78,32 @@ function download_fuzzy() {
 #
 # ...would run `cargo bench` using the benchmark data for `phrase/` benchmarks
 # for United States (us), in English (en), in Latin script (latn).
+#
+# For running the fuzzy benchmarks:
+#
+#     ./scripts/bench.sh run fuzzy d1
+#
+# ...would run the benchmark for `fuzzy` benchmarks for edit_distance 1
+
 function run() {
     type=$1
-    country=$2
-    language=$3
-    script=$4
-    # this will be used to create filenames ${fbasename}.txt and ${fbasename}_sample.txt
-    fbasename="${country}_${language}_${script}"
-    echo "running"
-    env PHRASE_BENCH="${TMP}/${type}/${fbasename}" cargo bench "${type}"
-    exit 0
-}
 
-function run_fuzzy() {
-    edit_distance=$1
-    # this will be used to create filenames ${fbasename}.txt and ${fbasename}_sample.txt
-    fbasename="fuzzy/fuzzy_${edit_distance}"
-    echo "running"
-    env FUZZY_BENCH="${TMP}/${fbasename}" cargo bench -v "fuzzy"
+    if [ $1 = "fuzzy" ]; then
+      edit_distance=$1
+      # this will be used to create filenames ${fbasename}.txt and ${fbasename}_sample.txt
+      fbasename="fuzzy/fuzzy_${edit_distance}"
+      echo "running"
+      env FUZZY_BENCH="${TMP_FUZZY}/${fbasename}" cargo bench -v "fuzzy"
+
+    else
+      country=$2
+      language=$3
+      script=$4
+      # this will be used to create filenames ${fbasename}.txt and ${fbasename}_sample.txt
+      fbasename="${country}_${language}_${script}"
+      echo "running"
+      env PHRASE_BENCH="${TMP}/${type}/${fbasename}" cargo bench "${type}"
+    fi
     exit 0
 }
 
@@ -105,10 +122,8 @@ function clean() {
 VERB=$1
 
 case $VERB in
-    download)  download $2 $3 $4 $5;;
-    download_fuzzy) download_fuzzy $2;;
-    run)        run $2 $3 $4 $5;;
-    run_fuzzy)  run_fuzzy $2;;
+    download)  download $2 ${3:-} ${4:-} ${5:-};;
+    run)        run $2 ${3:-} ${4:-} ${5:-};;
     clean)      clean;;
     *)          echo "not ok - invalid command" && exit 3;;
 esac

@@ -55,7 +55,7 @@ pub fn benchmark(c: &mut Criterion) {
             println!("file loc is {}", f);
             f
         },
-        Err(..) => String::from("/tmp/fuzzy-phrase-bench/fuzzy/fuzzy_d1"),
+        Err(..) => String::from("/tmp/fuzzy-map-bench/fuzzy/fuzzy_d1"),
     };
     let data_loc = format!("{}.txt", data_basename);
     // run benchmarks
