@@ -172,6 +172,14 @@ pub struct FuzzyMatchResult {
     edit_distance: u8,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct FuzzyWindowResult {
+    phrase: Vec<String>,
+    edit_distance: u8,
+    start_position: usize,
+    ends_in_prefix: bool,
+}
+
 impl FuzzyPhraseSet {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
         // the path of a fuzzy phrase set is a directory that has all the subcomponents in it at predictable URLs
@@ -421,28 +429,29 @@ impl FuzzyPhraseSet {
         self.fuzzy_match_prefix(&phrase_v, max_word_dist, max_phrase_dist)
     }
 
-    pub fn fuzzy_match_windows(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8, as_prefix: bool) {
+    pub fn fuzzy_match_windows(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8, ends_in_prefix: bool) -> Result<Vec<FuzzyWindowResult>, Box<Error>> {
         // this is a little different than the regular fuzzy match in that we're considering multiple possible substrings
         // we'll start by trying to fuzzy-match all the words, but some of those will likely fail -- rather than early-returning
         // like in regular fuzzy match, we'll keep going but those failed words will effectively wall off possible matching
         // subphrases from eachother, so we'll end up with multiple candidate subphrases to explore.
         // (hence the extra nesting -- a list of word sequences, each sequence being a list of word slots, each slot being a
         // list of fuzzy-match variants)
-        // if phrase.len() == 0 {
-        //     return Ok(Vec::new());
-        // }
+
+        if phrase.len() == 0 {
+            return Ok(Vec::new());
+        }
 
         #[derive(Debug)]
         struct Subquery {
-            start: usize,
-            match_prefix: bool,
+            start_position: usize,
+            ends_in_prefix: bool,
             word_possibilities: Vec<Vec<QueryWord>>
         }
         let mut subqueries: Vec<Subquery> = Vec::new();
 
         let edit_distance = min(max_word_dist, 1);
 
-        let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, Box<Error>>>> = if as_prefix {
+        let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, Box<Error>>>> = if ends_in_prefix {
             let last_idx = phrase.len() - 1;
             let i = phrase[..last_idx].iter().map(
                 |word| self.get_nonterminal_word_possibilities(word, edit_distance)
@@ -455,29 +464,59 @@ impl FuzzyPhraseSet {
             Box::new(i)
         };
 
-        let mut sq: Subquery = Subquery { start: 0, match_prefix: false, word_possibilities: Vec::new() };
+        let mut sq: Subquery = Subquery { start_position: 0, ends_in_prefix: false, word_possibilities: Vec::new() };
         for (i, matches) in seq.chain(iter::once(Ok(None))).enumerate() {
             match matches.unwrap() {
                 Some(p) => {
                     sq.word_possibilities.push(p);
                     if sq.word_possibilities.len() == 1 {
                         // this was the first thing to be added to this list
-                        sq.start = i;
+                        sq.start_position = i;
                     }
                 }
                 None => {
                     if sq.word_possibilities.len() > 0 {
                         // there's something to do
-                        if i == phrase.len() && as_prefix {
-                            sq.match_prefix = true;
+                        if i == phrase.len() && ends_in_prefix {
+                            sq.ends_in_prefix = true;
                         }
                         subqueries.push(sq);
-                        sq = Subquery { start: 0, match_prefix: false, word_possibilities: Vec::new() };
+                        sq = Subquery { start_position: 0, ends_in_prefix: false, word_possibilities: Vec::new() };
                     }
                 },
             }
         }
-        println!("{:?}", subqueries);
+
+        // the things we're looking for will lie entirely within one of our identified chunks of
+        // contiguous matched words, but could start on any of said words (they'll end, at latest,
+        // and the end of the chunk), so, iterate over the chunks and then iterate over the
+        // possible start words
+        let mut results: Vec<FuzzyWindowResult> = Vec::new();
+        for chunk in subqueries.iter() {
+            for i in 0..chunk.word_possibilities.len() {
+                let mut phrase_matches = self.phrase_set.recursive_match_combinations_as_windows(
+                    chunk.word_possibilities[i..].iter().cloned().collect(),
+                    max_phrase_dist,
+                    chunk.ends_in_prefix
+                )?;
+                for (phrase_p, sq_ends_in_prefix) in &phrase_matches {
+                    results.push(FuzzyWindowResult {
+                        phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
+                            QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
+                            QueryWord::Prefix { .. } => phrase[chunk.start_position + i].to_owned(),
+                        }).collect::<Vec<String>>(),
+                        edit_distance: phrase_p.iter().map(|qw| match qw {
+                            QueryWord::Full { edit_distance, .. } => *edit_distance,
+                            QueryWord::Prefix { .. } => 0u8,
+                        }).sum(),
+                        start_position: chunk.start_position + i,
+                        ends_in_prefix: *sq_ends_in_prefix,
+                    })
+                }
+            }
+        }
+
+        Ok(results)
     }
 }
 
@@ -597,7 +636,20 @@ mod tests {
 
     #[test]
     fn glue_fuzzy_match_windows() -> () {
-        SET.fuzzy_match_windows(&["100", "main", "street", "washington", "300"], 1, 1, true);
+        assert_eq!(
+            SET.fuzzy_match_windows(&["100", "main", "street", "washington", "300"], 1, 1, true).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: false },
+                FuzzyWindowResult { phrase: vec!["300".to_string()], edit_distance: 0, start_position: 4, ends_in_prefix: true }
+            ]
+        );
+
+        assert_eq!(
+            SET.fuzzy_match_windows(&["100", "main", "street", "washington", "300"], 1, 1, false).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: false },
+            ]
+        );
     }
 }
 
