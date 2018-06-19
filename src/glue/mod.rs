@@ -430,7 +430,7 @@ impl FuzzyPhraseSet {
         self.fuzzy_match_prefix(&phrase_v, max_word_dist, max_phrase_dist)
     }
 
-    pub fn fuzzy_match_windows(&self, phrase: &[&str], max_word_dist: u8, max_phrase_dist: u8, ends_in_prefix: bool) -> Result<Vec<FuzzyWindowResult>, Box<Error>> {
+    pub fn fuzzy_match_windows<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8, ends_in_prefix: bool) -> Result<Vec<FuzzyWindowResult>, Box<Error>> {
         // this is a little different than the regular fuzzy match in that we're considering multiple possible substrings
         // we'll start by trying to fuzzy-match all the words, but some of those will likely fail -- rather than early-returning
         // like in regular fuzzy match, we'll keep going but those failed words will effectively wall off possible matching
@@ -455,13 +455,13 @@ impl FuzzyPhraseSet {
         let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, Box<Error>>>> = if ends_in_prefix {
             let last_idx = phrase.len() - 1;
             let i = phrase[..last_idx].iter().map(
-                |word| self.get_nonterminal_word_possibilities(word, edit_distance)
+                |word| self.get_nonterminal_word_possibilities(word.as_ref(), edit_distance)
             ).chain(iter::once(last_idx).map(
-                |idx| self.get_terminal_word_possibilities(phrase[idx], edit_distance))
+                |idx| self.get_terminal_word_possibilities(phrase[idx].as_ref(), edit_distance))
             );
             Box::new(i)
         } else {
-            let i = phrase.iter().map(|word| self.get_nonterminal_word_possibilities(word, edit_distance));
+            let i = phrase.iter().map(|word| self.get_nonterminal_word_possibilities(word.as_ref(), edit_distance));
             Box::new(i)
         };
 
@@ -504,7 +504,7 @@ impl FuzzyPhraseSet {
                     results.push(FuzzyWindowResult {
                         phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
                             QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
-                            QueryWord::Prefix { .. } => phrase[chunk.start_position + i].to_owned(),
+                            QueryWord::Prefix { .. } => phrase[chunk.start_position + i].as_ref().to_owned(),
                         }).collect::<Vec<String>>(),
                         edit_distance: phrase_p.iter().map(|qw| match qw {
                             QueryWord::Full { edit_distance, .. } => *edit_distance,
