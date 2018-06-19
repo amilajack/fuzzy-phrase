@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 mod map;
+mod util;
 pub use self::map::FuzzyMap;
 pub use self::map::FuzzyMapBuilder;
 
