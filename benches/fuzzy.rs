@@ -1,7 +1,9 @@
+#[cfg(test)] extern crate test_utils;
+
 use criterion::{Criterion, Fun, Bencher};
-use reqwest;
 use fuzzy_phrase::fuzzy::map::FuzzyMap;
 use fuzzy_phrase::fuzzy::map::FuzzyMapBuilder;
+use test_utils::*;
 use std::rc::Rc;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -17,17 +19,26 @@ pub fn benchmark(c: &mut Criterion) {
         fuzzymap: FuzzyMap
     };
 
-    // fetch data and build the structures
-    let wordlist = reqwest::get("https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000")
-            .expect("tried to download data")
-            .text().expect("tried to decode the data");
+    let data_basename = match env::var("FUZZY_BENCH") {
+        Ok(f) => {
+            println!("file loc is {}", f);
+            f
+        },
+        Err(..) => String::from("/tmp/fuzzy-map-bench/fuzzy/"),
+    };
+    let exact_data_loc = format!("{}.txt", data_basename);
+    let f = File::open(exact_data_loc).expect("tried to open_file");
+    let file_buf = BufReader::new(&f);
 
-    let words = wordlist.trim().split("\n").map(|w| w.to_owned()).collect::<Vec<String>>();
+    let mut words: Vec<String> = vec![];
+    for line in file_buf.lines() {
+        let s: String = line.unwrap();
+        words.push(s);
+    }
 
     //build_to_iter expects a path to build the structure
     let dir = tempfile::tempdir().unwrap();
     let file_start = dir.path().join("fuzzy");
-
     // build the structure
     FuzzyMapBuilder::build_from_iter(&file_start, words.iter().map(|s| s.as_ref()) , 1);
     let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
@@ -37,6 +48,7 @@ pub fn benchmark(c: &mut Criterion) {
     // make a vector to fill with closures to bench-test
     let mut to_bench = Vec::new();
 
+    //shared across bench runs
     let data = shared_data.clone();
     to_bench.push(Fun::new("exact_match", move |b: &mut Bencher, _i| {
         // we're benching on a list of words, but criterion needs to run for as long as it wants
@@ -50,22 +62,15 @@ pub fn benchmark(c: &mut Criterion) {
         });
     }));
 
-    let data_basename = match env::var("FUZZY_BENCH") {
-        Ok(f) => {
-            println!("file loc is {}", f);
-            f
-        },
-        Err(..) => String::from("/tmp/fuzzy-map-bench/fuzzy/fuzzy_d1"),
-    };
-    let data_loc = format!("{}.txt", data_basename);
-    // run benchmarks
-    let f = File::open(data_loc).expect("tried to open_file");
-
+    let d1_loc = format!("{}.txt", data_basename);
+    let f = File::open(d1_loc).expect("tried to open_file");
     let file_buf = BufReader::new(&f);
     let mut typos: Vec<String> = vec![];
     for line in file_buf.lines() {
-       let s: String = line.unwrap();
-        typos.push(s);
+        let s: String = line.unwrap();
+        //use damage_words in test_utils to create typos
+        let damaged_word: String = damage_word(&s);
+        typos.push(damaged_word);
     }
 
     to_bench.push(Fun::new("d1_not_exact_match", move |b: &mut Bencher, _i| {

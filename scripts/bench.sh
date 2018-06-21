@@ -89,7 +89,7 @@ function run() {
     type=$1
 
     if [ $1 = "fuzzy" ]; then
-      edit_distance=$1
+      edit_distance=$2
       # this will be used to create filenames ${fbasename}.txt and ${fbasename}_sample.txt
       fbasename="fuzzy/fuzzy_${edit_distance}"
       echo "running"
