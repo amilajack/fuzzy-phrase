@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, hash_map::Entry};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
 use std::fs;
 use std::iter;
-use std::cmp::min;
+use std::cmp::{min, Ord};
+use std::fmt::Debug;
 
 use serde_json;
 use fst::Streamer;
@@ -167,13 +168,13 @@ pub struct FuzzyPhraseSet {
     script_regex: regex::Regex,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct FuzzyMatchResult {
     phrase: Vec<String>,
     edit_distance: u8,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct FuzzyWindowResult {
     phrase: Vec<String>,
     edit_distance: u8,
@@ -316,12 +317,20 @@ impl FuzzyPhraseSet {
     fn get_terminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
         // last word: try both prefix and, if eligible, fuzzy lookup, and return nothing if both fail
         let mut last_variants: Vec<QueryWord> = Vec::new();
-        if let Some((word_id_start, word_id_end)) = self.prefix_set.get_prefix_range(word) {
+        let found_prefix = if let Some((word_id_start, word_id_end)) = self.prefix_set.get_prefix_range(word) {
             last_variants.push(QueryWord::new_prefix((word_id_start.value() as u32, word_id_end.value() as u32)));
-        }
+            true
+        } else {
+            false
+        };
+
         if self.can_fuzzy_match(word) {
             let last_fuzzy_results = self.fuzzy_map.lookup(word, edit_distance, |id| &self.word_list[id as usize])?;
             for result in last_fuzzy_results {
+                if found_prefix && result.edit_distance == 0 {
+                    // if we found a prefix match, a full-word exact match is duplicative
+                    continue;
+                }
                 last_variants.push(QueryWord::new_full(result.id, result.edit_distance));
             }
         }
@@ -519,6 +528,150 @@ impl FuzzyPhraseSet {
 
         Ok(results)
     }
+
+    pub fn fuzzy_match_multi<T: AsRef<str> + Ord + Debug>(&self, phrases: &[(&[T], bool)], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<Vec<FuzzyMatchResult>>, Box<Error>> {
+        // This is roughly equivalent to the windowing operation in purpose, but operating under
+        // the assumption that the caller will have wanted to make some changes to some of the
+        // windows for normalization purposes, such that they don't all fit neatly until a single
+        // set of overlapping strings anymore. Many of them still do, though, and many also share
+        // words, so we should take advantage of those circumstances and save work where possible --
+        // specifically, we should only fuzzy-match each unique token once (or potentially twice if
+        // the same word occurs in both prefix-y and non-prefix-y positions), and we should also
+        // combine phrase graph explorations in cases where one search string is a strict,
+        // non-prefix-terminating prefix of another.
+        //
+        // The input is a slice of tuples of a phrase (slice of str-ish things) and a bool
+        // representing ends_in_prefix-ness. The output here will be mapped positionally to the
+        // input, so it'll be a vector of the same size as the input slice, where each position
+        // should contain the same results as a fuzzy_match or fuzzy_match_prefix of that phrase.
+
+        if phrases.len() == 0 {
+            return Ok(Vec::new());
+        }
+
+        let edit_distance = min(max_word_dist, 1);
+
+        // fuzzy-lookup all the words, but only once apiece (per prefix-y-ness type)
+        let mut all_words: HashMap<(&str, bool), Vec<QueryWord>> = HashMap::new();
+        let mut indexed_phrases: Vec<(&[T], bool, usize)> = Vec::new();
+        for (i, (phrase, ends_in_prefix)) in phrases.iter().enumerate() {
+            if *ends_in_prefix {
+                let last_idx = phrase.len() - 1;
+                for word in phrase[..last_idx].iter() {
+                    let word = word.as_ref();
+                    if let Entry::Vacant(entry) = all_words.entry((word, false)) {
+                        entry.insert(
+                            self.get_nonterminal_word_possibilities(word, edit_distance)?
+                                .unwrap_or_else(|| Vec::with_capacity(0))
+                        );
+                    }
+                }
+                let last_word = phrase[last_idx].as_ref();
+                if let Entry::Vacant(entry) = all_words.entry((last_word, true)) {
+                    entry.insert(
+                        self.get_terminal_word_possibilities(last_word, edit_distance)?
+                            .unwrap_or_else(|| Vec::with_capacity(0))
+                    );
+                }
+            } else {
+                for word in phrase.iter() {
+                    let word = word.as_ref();
+                    if let Entry::Vacant(entry) = all_words.entry((word, false)) {
+                        entry.insert(
+                            self.get_nonterminal_word_possibilities(word, edit_distance)?
+                                .unwrap_or_else(|| Vec::with_capacity(0))
+                        );
+                    }
+                }
+            }
+            indexed_phrases.push((phrase, *ends_in_prefix, i));
+        }
+
+        // Now we'll identify clusters of phrases consisting of a longest phrase together with
+        // shorter phrases that are prefixes of that longest phrase (and also not ends_with_prefix)
+        // so that we can just recurse over the phrase graph for the longest phrase and catch
+        // any non-prefix-terminal shorter phrases along the way
+        indexed_phrases.sort();
+        let mut collapsed: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut group: Vec<usize> = Vec::new();
+        let mut ip_iter = indexed_phrases.iter().peekable();
+        while let Some(item) = ip_iter.next() {
+            group.push(item.2);
+            let done_with_group = match ip_iter.peek() {
+                None => true,
+                Some(peek) => {
+                    item.1 ||
+                        peek.0.len() <= item.0.len() ||
+                        &peek.0[..item.0.len()] != item.0
+                },
+            };
+            if done_with_group {
+                collapsed.insert(item.2, group);
+                group = Vec::new();
+            }
+        }
+
+        // Now we'll construct a vector of actual QueryWords for each longest phrase and
+        // explore it, and then match it and its prefixes up to whatever we get back
+        let mut results: Vec<Vec<FuzzyMatchResult>> = vec![vec![]; phrases.len()];
+        let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::new();
+        for (longest_idx, all_idxes) in collapsed.iter() {
+            if phrases[*longest_idx].0.len() == 0 {
+                // we've already filled the results with empty vectors,
+                // so they can just stay empty
+                continue;
+            }
+
+            // Reuse the possibilities vector
+            word_possibilities.clear();
+            let longest_phrase = &phrases[*longest_idx].0;
+            let ends_in_prefix = phrases[*longest_idx].1;
+            for word in longest_phrase[..(longest_phrase.len() - 1)].iter() {
+                word_possibilities.push(
+                    all_words.get(&(word.as_ref(), false))
+                        .ok_or("Can't find corrected word")?.clone()
+                );
+            }
+            word_possibilities.push(
+                all_words.get(&(longest_phrase[longest_phrase.len() - 1].as_ref(), ends_in_prefix))
+                    .ok_or("Can't find corrected word")?.clone()
+            );
+
+            let phrase_matches = self.phrase_set.match_combinations_as_windows(
+                &word_possibilities,
+                max_phrase_dist,
+                ends_in_prefix
+            )?;
+
+            // Within this prefix cluster we have different things of different lengths and
+            // prefix-y-nesses. Any results we get back of the same length and prefix-y-ness
+            // should be ascribed to their matching entries in the cluster so they can be inserted
+            // into the right output slot.
+            let length_map: HashMap<(usize, bool), usize> = all_idxes.iter().map(
+                |&idx| ((phrases[idx].0.len(), phrases[idx].1), idx)
+            ).collect();
+
+            for (phrase_p, sq_ends_in_prefix) in &phrase_matches {
+                // We might have found results in our phrase graph traversal that we weren't
+                // actually look for -- we'll ignore those and only add results if they match
+                if let Some(&input_idx) = length_map.get(&(phrase_p.len(), *sq_ends_in_prefix)) {
+                    let input_phrase = phrases[input_idx].0;
+                    results[input_idx].push(FuzzyMatchResult {
+                        phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
+                            QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
+                            QueryWord::Prefix { .. } => input_phrase[i].as_ref().to_owned(),
+                        }).collect::<Vec<String>>(),
+                        edit_distance: phrase_p.iter().map(|qw| match qw {
+                            QueryWord::Full { edit_distance, .. } => *edit_distance,
+                            QueryWord::Prefix { .. } => 0u8,
+                        }).sum(),
+                    });
+                }
+            }
+        }
+
+        Ok(results)
+    }
 }
 
 #[cfg(test)]
@@ -663,6 +816,28 @@ mod tests {
             SET.fuzzy_match_windows(&["100", "main", "street", "washington", "300"], 1, 1, false).unwrap(),
             vec![
                 FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: false },
+            ]
+        );
+    }
+
+    #[test]
+    fn glue_fuzzy_match_multi() -> () {
+        assert_eq!(
+            SET.fuzzy_match_multi(&[
+                (&["100"], false),
+                (&["100", "main"], false),
+                (&["100", "main", "street"], true),
+                (&["300"], false),
+                (&["300", "mlk"], false),
+                (&["300", "mlk", "blvd"], true),
+            ], 1, 1).unwrap(),
+            vec![
+                vec![],
+                vec![],
+                vec![FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0 }],
+                vec![],
+                vec![],
+                vec![FuzzyMatchResult { phrase: vec!["300".to_string(), "mlk".to_string(), "blvd".to_string()], edit_distance: 0 }]
             ]
         );
     }
