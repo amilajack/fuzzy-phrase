@@ -168,8 +168,8 @@ pub struct FuzzyPhraseSet {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FuzzyMatchResult {
-    phrase: Vec<String>,
-    edit_distance: u8,
+    pub phrase: Vec<String>,
+    pub edit_distance: u8,
 }
 
 impl FuzzyPhraseSet {
