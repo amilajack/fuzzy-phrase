@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, hash_map::Entry};
+use std::collections::{BTreeMap, HashMap, hash_map};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
@@ -559,7 +559,7 @@ impl FuzzyPhraseSet {
                 let last_idx = phrase.len() - 1;
                 for word in phrase[..last_idx].iter() {
                     let word = word.as_ref();
-                    if let Entry::Vacant(entry) = all_words.entry((word, false)) {
+                    if let hash_map::Entry::Vacant(entry) = all_words.entry((word, false)) {
                         entry.insert(
                             self.get_nonterminal_word_possibilities(word, edit_distance)?
                                 .unwrap_or_else(|| Vec::with_capacity(0))
@@ -567,7 +567,7 @@ impl FuzzyPhraseSet {
                     }
                 }
                 let last_word = phrase[last_idx].as_ref();
-                if let Entry::Vacant(entry) = all_words.entry((last_word, true)) {
+                if let hash_map::Entry::Vacant(entry) = all_words.entry((last_word, true)) {
                     entry.insert(
                         self.get_terminal_word_possibilities(last_word, edit_distance)?
                             .unwrap_or_else(|| Vec::with_capacity(0))
@@ -576,7 +576,7 @@ impl FuzzyPhraseSet {
             } else {
                 for word in phrase.iter() {
                     let word = word.as_ref();
-                    if let Entry::Vacant(entry) = all_words.entry((word, false)) {
+                    if let hash_map::Entry::Vacant(entry) = all_words.entry((word, false)) {
                         entry.insert(
                             self.get_nonterminal_word_possibilities(word, edit_distance)?
                                 .unwrap_or_else(|| Vec::with_capacity(0))
