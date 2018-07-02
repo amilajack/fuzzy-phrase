@@ -33,7 +33,7 @@ jobs:
       - run:
           name: Coverage
           command: |
-            curl -sL https://github.com/xd009642/tarpaulin/releases/download/0.5.6/cargo-tarpaulin-0.5.6-travis.tar.gz | tar xvz -C $HOME/.cargo/bin
+            RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --version 0.6.2 cargo-tarpaulin
             cargo tarpaulin \
               --ciserver circle-ci \
               --verbose --out Xml
