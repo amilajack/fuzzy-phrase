@@ -33,7 +33,7 @@ jobs:
       - run:
           name: Coverage
           command: |
-            apt-get update && apt-get install libssl-dev pkg-config cmake zlib1g-dev
+            sudo apt-get update && sudo apt-get install libssl-dev pkg-config cmake zlib1g-dev
             RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install --version 0.6.2 cargo-tarpaulin
             cargo tarpaulin \
               --ciserver circle-ci \
