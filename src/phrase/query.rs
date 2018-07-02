@@ -1,9 +1,8 @@
 use super::util;
 use super::WordKey;
-use std::cmp::PartialEq;
 
 /// An abstraction over full words and prefixes.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum QueryWord {
     /// A `Full` word is a word that has an identifier and is one of the members of a PrefixSet.
     Full {
@@ -57,35 +56,6 @@ impl Default for QueryWord {
             id: 0,
             key: [255u8, 255u8, 255u8],
             edit_distance: 99,
-        }
-    }
-}
-
-impl PartialEq for QueryWord {
-    fn eq(&self, other: &QueryWord) -> bool {
-        match self {
-            QueryWord::Full{ id, .. } => {
-                let my_id = id;
-                match other {
-                    QueryWord::Full{ id, ..} => {
-                        return my_id == id
-                    },
-                    QueryWord::Prefix{..} => {
-                        return false
-                    }
-                }
-            },
-            QueryWord::Prefix{ id_range, ..} => {
-                let my_id_range = id_range;
-                match other {
-                    QueryWord::Full{..} => {
-                        return false
-                    },
-                    QueryWord::Prefix{id_range, ..} => {
-                        return my_id_range == id_range
-                    }
-                }
-            },
         }
     }
 }
