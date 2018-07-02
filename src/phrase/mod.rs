@@ -62,7 +62,7 @@ impl PhraseSet {
 
     /// Recursively explore the phrase graph looking for combinations of candidate words to see
     /// which ones match actual phrases in the phrase graph.
-    pub fn recursive_match_combinations(
+    pub fn match_combinations(
         &self,
         word_possibilities: Vec<Vec<QueryWord>>,
         max_phrase_dist: u8
@@ -134,7 +134,7 @@ impl PhraseSet {
 
     /// Recursively explore the phrase graph looking for combinations of candidate words to see
     /// which ones match prefixes of actual phrases in the phrase graph.
-    pub fn recursive_match_combinations_as_prefixes(
+    pub fn match_combinations_as_prefixes(
         &self,
         word_possibilities: Vec<Vec<QueryWord>>,
         max_phrase_dist: u8
@@ -324,12 +324,19 @@ impl<W: io::Write> PhraseSetBuilder<W> {
 
 #[cfg(test)]
 mod tests {
+    extern crate lazy_static;
+    extern crate strsim;
+    extern crate regex;
     use std::fs::File;
     use fst::Streamer;
+    use std::collections::BTreeMap;
+    use self::strsim::osa_distance;
+    use self::regex::Regex;
     use super::*;
     use self::query::{QueryPhrase, QueryWord};
     use self::util::three_byte_decode;
 
+    // the first chunk of tests assess the structure directly, with numerical inputs
     #[test]
     fn insert_phrases_memory() {
         let mut build = PhraseSetBuilder::memory();
@@ -681,5 +688,192 @@ mod tests {
 
     }
 
+    // the next chunk of tests simulate practical use using sample data
+    lazy_static! {
+        static ref PREFIX_DATA: &'static str = include_str!("../../benches/data/phrase_test_shared_prefix.txt");
+        static ref TYPO_DATA: &'static str = include_str!("../../benches/data/phrase_test_typos.txt");
+        static ref PHRASES: Vec<&'static str> = {
+            let mut phrases = PREFIX_DATA.trim().split("\n").collect::<Vec<&str>>();
+            phrases.extend(TYPO_DATA.trim().split("\n"));
+            phrases
+        };
+        static ref WORDS: BTreeMap<&'static str, u32> = {
+            let mut words: BTreeMap<&'static str, u32> = BTreeMap::new();
+            for phrase in PHRASES.iter() {
+                for word in phrase.split(' ') {
+                    words.insert(word, 0);
+                }
+            }
+            let mut id: u32 = 0;
+            for (_key, value) in words.iter_mut() {
+                *value = id;
+                // space the IDs out some
+                id += 1000;
+            }
+            words
+        };
+        static ref DISTANCES: BTreeMap<u32, Vec<(u32, u8)>> = {
+            let mut out: BTreeMap<u32, Vec<(u32, u8)>> = BTreeMap::new();
+
+            let mut non_number: Vec<(&'static str, u32)> = Vec::new();
+            let number_chars = Regex::new("[0-9#]").unwrap();
+            for (word, id) in WORDS.iter() {
+                out.insert(*id, vec![(*id, 0)]);
+                if !number_chars.is_match(word) {
+                    non_number.push((*word, *id));
+                }
+            }
+
+            for (word1, id1) in &non_number {
+                for (word2, id2) in &non_number {
+                    if osa_distance(word1, word2) == 1 {
+                        out.get_mut(id1).unwrap().push((*id2, 1));
+                    }
+                }
+            }
+
+            out
+        };
+        static ref SET: PhraseSet = {
+            let mut builder = PhraseSetBuilder::memory();
+
+            let mut id_phrases = PHRASES.iter().map(|phrase| {
+                phrase.split(' ').map(|w| WORDS[w]).collect::<Vec<_>>()
+            }).collect::<Vec<_>>();
+            id_phrases.sort();
+            for id_phrase in id_phrases {
+                builder.insert(&id_phrase).unwrap();
+            }
+            let bytes = builder.into_inner().unwrap();
+            PhraseSet::from_bytes(bytes).unwrap()
+        };
+    }
+
+    fn get_full(phrase: &str) -> Vec<QueryWord> {
+        phrase.split(' ').map(
+            |w| QueryWord::new_full(WORDS[w], 0)
+        ).collect::<Vec<_>>()
+    }
+
+    fn get_prefix(phrase: &str) -> Vec<QueryWord> {
+        let words: Vec<&str> = phrase.split(' ').collect();
+        let mut out = words[..(words.len() - 1)].iter().map(
+            |w| QueryWord::new_full(*WORDS.get(w).unwrap(), 0)
+        ).collect::<Vec<QueryWord>>();
+        let last = &words[words.len() - 1];
+        let prefix_match = WORDS.iter().filter(|(k, _v)| k.starts_with(last)).collect::<Vec<_>>();
+        out.push(QueryWord::new_prefix((*prefix_match[0].1, *prefix_match.last().unwrap().1)));
+        out
+    }
+
+    #[test]
+    fn sample_contains() {
+        // just test everything
+        for phrase in PHRASES.iter() {
+            assert!(SET.contains(
+                QueryPhrase::new(&get_full(phrase)).unwrap()
+            ).unwrap());
+        }
+    }
+
+    #[test]
+    fn sample_doesnt_contain() {
+        // construct some artificial broken examples by reversing the sequence of good ones
+        for phrase in PHRASES.iter() {
+            let mut inverse = get_full(phrase);
+            inverse.reverse();
+            assert!(!SET.contains(
+                QueryPhrase::new(&inverse).unwrap()
+            ).unwrap());
+        }
+
+        // a couple manual ones
+        let contains = |phrase| {
+            SET.contains(QueryPhrase::new(&get_full(phrase)).unwrap()).unwrap()
+        };
+
+        // typo
+        assert!(!contains("15## Hillis Market Rd"));
+        // prefix
+        assert!(!contains("40# Ivy"));
+    }
+
+    #[test]
+    fn sample_contains_prefix() {
+        // being exhaustive is a little laborious, so just try a bunch of specific ones
+        let contains_prefix = |phrase| {
+            SET.contains_prefix(QueryPhrase::new(&get_prefix(phrase)).unwrap()).unwrap()
+        };
+
+        assert!(contains_prefix("8"));
+        assert!(contains_prefix("84"));
+        assert!(contains_prefix("84#"));
+        assert!(contains_prefix("84# "));
+        assert!(contains_prefix("84# G"));
+        assert!(contains_prefix("84# Suchava Dr"));
+
+        assert!(!contains_prefix("84# Suchava Dr Ln"));
+        assert!(!contains_prefix("Suchava Dr"));
+        // note that we don't test any that include words we don't know about -- in the broader
+        // scheme, that's not our job
+    }
+
+    fn get_full_variants(phrase: &str) -> Vec<Vec<QueryWord>> {
+        phrase.split(' ').map(
+            |w| DISTANCES[&WORDS[w]].iter().map(
+                |(id, distance)| QueryWord::new_full(*id, *distance)
+            ).collect::<Vec<_>>()
+        ).collect::<Vec<_>>()
+    }
+
+    fn get_prefix_variants(phrase: &str) -> Vec<Vec<QueryWord>> {
+        let words: Vec<&str> = phrase.split(' ').collect();
+        let mut out = words[..(words.len() - 1)].iter().map(
+            |w| DISTANCES.get(WORDS.get(w).unwrap()).unwrap().iter().map(
+                |(id, distance)| QueryWord::new_full(*id, *distance)
+            ).collect::<Vec<_>>()
+        ).collect::<Vec<Vec<QueryWord>>>();
+
+        let last = &words[words.len() - 1];
+        let prefix_match = WORDS.iter().filter(|(k, _v)| k.starts_with(last)).collect::<Vec<_>>();
+        let mut last_group = vec![QueryWord::new_prefix((*prefix_match[0].1, *prefix_match.last().unwrap().1))];
+        if let Some(id) = WORDS.get(last) {
+            for (id, distance) in DISTANCES.get(id).unwrap() {
+                if *distance == 1u8 {
+                    last_group.push(QueryWord::new_full(*id, *distance));
+                }
+            }
+        }
+        out.push(last_group);
+
+        out
+    }
+
+    #[test]
+    fn sample_fuzzy_match() {
+        let correct = get_full("53# Country View Dr");
+        let no_typo = SET.match_combinations(get_full_variants("53# Country View Dr"), 1).unwrap();
+        assert!(no_typo == vec![correct.clone()]);
+
+        let typo = SET.match_combinations(get_full_variants("53# County View Dr"), 1).unwrap();
+        assert!(typo != vec![correct.clone()]);
+    }
+
+    #[test]
+    fn sample_fuzzy_match_prefix() {
+        let correct1 = get_prefix("53# Country");
+        let no_typo1 = SET.match_combinations_as_prefixes(get_prefix_variants("53# Country"), 1).unwrap();
+        assert!(no_typo1 == vec![correct1.clone()]);
+
+        let typo1 = SET.match_combinations_as_prefixes(get_prefix_variants("53# County"), 1).unwrap();
+        assert!(typo1 != vec![correct1.clone()]);
+
+        let correct2 = get_prefix("53# Country V");
+        let no_typo2 = SET.match_combinations_as_prefixes(get_prefix_variants("53# Country V"), 1).unwrap();
+        assert!(no_typo2 == vec![correct2.clone()]);
+
+        let typo2 = SET.match_combinations_as_prefixes(get_prefix_variants("53# County V"), 1).unwrap();
+        assert!(typo2 != vec![correct2.clone()]);
+    }
 }
 
