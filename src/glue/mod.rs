@@ -568,6 +568,10 @@ impl FuzzyPhraseSet {
     }
 
     pub fn fuzzy_match_multi<T: AsRef<str> + Ord + Debug>(&self, phrases: &[(&[T], bool)], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<Vec<FuzzyMatchResult>>, Box<Error>> {
+        // NOTE: this function is most efficient when `phrases` is sorted lexicographically
+        // according to the 0th member of each element. It presumes that, if some X is a prefix
+        // of some Y, then X will appear earlier in `phrases` than Y.
+        //
         // This is roughly equivalent to `fuzzy_match_windows` in purpose, but operating under
         // the assumption that the caller will have wanted to make some changes to some of the
         // windows for normalization purposes, such that they don't all fit neatly until a single
