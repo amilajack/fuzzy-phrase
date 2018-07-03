@@ -18,6 +18,9 @@ pub use prefix::PrefixSet;
 pub use prefix::PrefixSetBuilder;
 
 pub mod fuzzy;
+pub use fuzzy::FuzzyMap;
+pub use fuzzy::FuzzyMapBuilder;
+
 pub mod phrase;
 
 pub use phrase::PhraseSet;

@@ -66,10 +66,10 @@ pub fn multi_modified_damlev_hint<T: AsRef<str>>(target: T, sources: &[T], max_h
         prev_row.clear();
         prev_row.extend(0u32..(width as u32));
 
-        for i in 1..=s_len {
+        for i in 1..(s_len + 1) {
             let mut row_min = u32::max_value();
             cur_row[0] = i as u32;
-            for j in 1..=t_len {
+            for j in 1..(t_len + 1) {
                 let cost = if s_chars[i - 1] == t_chars[j - 1] { 0 } else { 1 };
                 let mut current = min(
                     prev_row[j] + 1,           // deletion

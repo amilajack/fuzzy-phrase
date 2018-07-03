@@ -12,11 +12,13 @@ use criterion::Criterion;
 
 mod prefix;
 mod phrase;
+mod fuzzy;
 mod glue;
 
 criterion_group!{
     name = benches;
     config = Criterion::default();
-    targets = prefix::benchmark, phrase::benchmark, glue::benchmark
+
+    targets = prefix::benchmark, phrase::benchmark, glue::benchmark, fuzzy::benchmark
 }
 criterion_main!(benches);
