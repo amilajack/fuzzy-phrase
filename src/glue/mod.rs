@@ -168,10 +168,10 @@ pub struct FuzzyPhraseSet {
     script_regex: regex::Regex,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FuzzyMatchResult {
-    phrase: Vec<String>,
-    edit_distance: u8,
+    pub phrase: Vec<String>,
+    pub edit_distance: u8,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
