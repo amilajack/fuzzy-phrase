@@ -568,10 +568,7 @@ impl FuzzyPhraseSet {
     }
 
     pub fn fuzzy_match_multi<T: AsRef<str> + Ord + Debug>(&self, phrases: &[(&[T], bool)], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<Vec<FuzzyMatchResult>>, Box<Error>> {
-        // NOTE: this function is most efficient when `phrases` is sorted lexicographically
-        // according to the 0th member of each element. It presumes that, if some X is a prefix
-        // of some Y, then X will appear earlier in `phrases` than Y.
-        //
+
         // This is roughly equivalent to `fuzzy_match_windows` in purpose, but operating under
         // the assumption that the caller will have wanted to make some changes to some of the
         // windows for normalization purposes, such that they don't all fit neatly until a single
@@ -629,11 +626,25 @@ impl FuzzyPhraseSet {
             indexed_phrases.push((phrase, *ends_in_prefix, i));
         }
 
+        // First, `indexed_phrases` is sorted lexicographically according to the 0th member of each
+        // element. That's because the next step (which groups the members into prefix clusters)
+        // presumes that, if some X is a prefix of some Y, then X will appear earlier in `phrases`
+        // than Y. In practice, lexicographic sorting makes this true most of the time. It's possible that we won't properly group everything
+        // that could be grouped under a common prefix, though, in which case we'll have some
+        // duplicate lookups.  for instance, the first three of these phrases will cluster
+        // together, but the fourth one won't (see comments below for more details).
+        //
+        // ["A", "B"]
+        // ["A", "B", "C"],
+        // ["A", "B", "C", "D"]
+        // ["A", "B", "C", "E"]
+        //
+        indexed_phrases.sort();
+
         // Now we'll identify clusters of phrases consisting of a longest phrase together with
         // shorter phrases that are prefixes of that longest phrase (and also not ends_with_prefix)
         // so that we can just recurse over the phrase graph for the longest phrase and catch
         // any non-prefix-terminal shorter phrases along the way
-        indexed_phrases.sort();
         let mut collapsed: HashMap<usize, Vec<usize>> = HashMap::new();
         let mut group: Vec<usize> = Vec::new();
         let mut ip_iter = indexed_phrases.iter().peekable();
