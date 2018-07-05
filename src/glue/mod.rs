@@ -174,12 +174,12 @@ pub struct FuzzyMatchResult {
     pub edit_distance: u8,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FuzzyWindowResult {
-    phrase: Vec<String>,
-    edit_distance: u8,
-    start_position: usize,
-    ends_in_prefix: bool,
+    pub phrase: Vec<String>,
+    pub edit_distance: u8,
+    pub start_position: usize,
+    pub ends_in_prefix: bool,
 }
 
 impl FuzzyPhraseSet {
