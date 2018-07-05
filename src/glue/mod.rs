@@ -166,7 +166,7 @@ pub struct FuzzyPhraseSet {
     script_regex: regex::Regex,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FuzzyMatchResult {
     pub phrase: Vec<String>,
     pub edit_distance: u8,
