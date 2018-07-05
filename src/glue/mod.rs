@@ -315,7 +315,7 @@ impl FuzzyPhraseSet {
             }
         }
 
-        let phrase_matches = self.phrase_set.recursive_match_combinations(word_possibilities, max_phrase_dist)?;
+        let phrase_matches = self.phrase_set.match_combinations(word_possibilities, max_phrase_dist)?;
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
         for phrase_p in &phrase_matches {
@@ -397,7 +397,7 @@ impl FuzzyPhraseSet {
         }
         word_possibilities.push(last_variants);
 
-        let phrase_matches = self.phrase_set.recursive_match_combinations_as_prefixes(word_possibilities, max_phrase_dist)?;
+        let phrase_matches = self.phrase_set.match_combinations_as_prefixes(word_possibilities, max_phrase_dist)?;
 
         let mut results: Vec<FuzzyMatchResult> = Vec::new();
         for phrase_p in &phrase_matches {
