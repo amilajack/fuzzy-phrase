@@ -440,13 +440,34 @@ impl FuzzyPhraseSet {
     }
 
     pub fn fuzzy_match_windows<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8, ends_in_prefix: bool) -> Result<Vec<FuzzyWindowResult>, Box<Error>> {
-        // this is a little different than the regular fuzzy match in that we're considering multiple possible substrings
-        // we'll start by trying to fuzzy-match all the words, but some of those will likely fail -- rather than early-returning
-        // like in regular fuzzy match, we'll keep going but those failed words will effectively wall off possible matching
-        // subphrases from eachother, so we'll end up with multiple candidate subphrases to explore.
-        // (hence the extra nesting -- a list of word sequences, each sequence being a list of word slots, each slot being a
-        // list of fuzzy-match variants)
-
+        // this is a little different than the regular fuzzy match in that we're considering
+        // multiple possible substrings we'll start by trying to fuzzy-match all the words, but
+        // some of those will likely fail -- rather than early-returning like in regular fuzzy
+        // match, we'll keep going but those failed words will effectively wall off possible
+        // matching subphrases from eachother, so we'll end up with multiple candidate subphrases
+        // to explore.  (hence the extra nesting -- a list of word sequences, each sequence being a
+        // list of word slots, each slot being a list of fuzzy-match variants)
+        //
+        // The mechanics of this approach:
+        //
+        // We're iterating over the fuzzy matches of each word in the phrase to produce subqueries.
+        // This loop eliminates a lot of potential subqueries by looking at the word possibilities
+        // in each position. In any given position, we might have found zero possibilities. That
+        // means that we can ignore subqueries that include the original query word in this
+        // position. We can also isolate subqueries that include the previous words, and start in
+        // the next position when looking for more subqueries.  For example, if a query's word
+        // possibilities look like this (simplifying with letters instead of words):
+        //
+        //     [ [A, B], [C], [], [F, G], [H] ]
+        //
+        // Intuitively, we know we want to isolate "A C", "B C", "F H", and "G H" but. We'll
+        // also want to look at all possible start positions in those substrings, so "C" and "H" as
+        // well.
+        //
+        // What we want to ignore is whatever query word was in position 2 (since it didn't match
+        // anything in the FuzzyMap).  We also don't want to consider things like "A C F H" because
+        // that's not a continuous sequence of tokens in the query.
+        //
         if phrase.len() == 0 {
             return Ok(Vec::new());
         }
@@ -461,11 +482,15 @@ impl FuzzyPhraseSet {
 
         let edit_distance = min(max_word_dist, 1);
 
+        // this block creates an iterator of possible fuzzy matches for each word in phrase
         let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, Box<Error>>>> = if ends_in_prefix {
+            // if the phrase ends in a prefix
             let last_idx = phrase.len() - 1;
             let i = phrase[..last_idx].iter().map(
+                // call this function on every word except the last one
                 |word| self.get_nonterminal_word_possibilities(word.as_ref(), edit_distance)
             ).chain(iter::once(last_idx).map(
+                // call this function on the last word (the prefix)
                 |idx| self.get_terminal_word_possibilities(phrase[idx].as_ref(), edit_distance))
             );
             Box::new(i)
@@ -474,7 +499,20 @@ impl FuzzyPhraseSet {
             Box::new(i)
         };
 
+        // the sq variable starts off set to default variables.
         let mut sq: Subquery = Subquery { start_position: 0, ends_in_prefix: false, word_possibilities: Vec::new() };
+
+        // Continuing with the example from above:
+        //
+        //     [ [A, B], [C], [], [F, G], [H] ]
+        //
+        // After iterating through positions 0 and 1, we know we want to consider subqueries "A C"
+        // and "B C". When we get to position 2, we see there are no matches. So we add the `sq`
+        // object with [[A, B], [C]] to `subqueries` and continue on, setting `sq` to default
+        // values. We can pick up again, iterating through positions 3 and 4. Their possibilities
+        // are non-empty, so we'll add them to the newly reset `sq`.  Finally, we'll get to the
+        // special `Ok(None)` that's chained at the end. Just like when we were in position 2,
+        // we'll push the `sq` to `subqueries`.
         for (i, matches) in seq.chain(iter::once(Ok(None))).enumerate() {
             match matches.unwrap() {
                 Some(p) => {
@@ -485,22 +523,33 @@ impl FuzzyPhraseSet {
                     }
                 }
                 None => {
+                    // we end up here when either:
+                    //     (a) the word in position i had no word_possibilities
+                    //     (b) we've arrived at the end of the phrase, signaled by the
+                    //         extra Ok(None) chained on to seq in this loop
                     if sq.word_possibilities.len() > 0 {
-                        // there's something to do
+                        // if the word_possibilities for the subquery built so far is non-empty,
+                        // that means there's something to do
                         if i == phrase.len() && ends_in_prefix {
                             sq.ends_in_prefix = true;
                         }
+                        // push this subquery into the result array.
                         subqueries.push(sq);
+                        // if reset the sq variable to the same default values after each loop.
                         sq = Subquery { start_position: 0, ends_in_prefix: false, word_possibilities: Vec::new() };
                     }
                 },
             }
         }
 
-        // the things we're looking for will lie entirely within one of our identified chunks of
+        // The things we're looking for will lie entirely within one of our identified chunks of
         // contiguous matched words, but could start on any of said words (they'll end, at latest,
         // and the end of the chunk), so, iterate over the chunks and then iterate over the
-        // possible start words
+        // possible start words.
+        //
+        // Continuing with the example above: by iterating over multiple start positions within
+        // each chunk, we'll end up considering "C" and "H" in addition to the combinations that
+        // start in the initial positions ("A C", "B C", "F H", "G H").
         let mut results: Vec<FuzzyWindowResult> = Vec::new();
         for chunk in subqueries.iter() {
             for i in 0..chunk.word_possibilities.len() {
@@ -530,7 +579,8 @@ impl FuzzyPhraseSet {
     }
 
     pub fn fuzzy_match_multi<T: AsRef<str> + Ord + Debug>(&self, phrases: &[(&[T], bool)], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<Vec<FuzzyMatchResult>>, Box<Error>> {
-        // This is roughly equivalent to the windowing operation in purpose, but operating under
+
+        // This is roughly equivalent to `fuzzy_match_windows` in purpose, but operating under
         // the assumption that the caller will have wanted to make some changes to some of the
         // windows for normalization purposes, such that they don't all fit neatly until a single
         // set of overlapping strings anymore. Many of them still do, though, and many also share
@@ -587,11 +637,25 @@ impl FuzzyPhraseSet {
             indexed_phrases.push((phrase, *ends_in_prefix, i));
         }
 
+        // First, `indexed_phrases` is sorted lexicographically according to the 0th member of each
+        // element. That's because the next step (which groups the members into prefix clusters)
+        // presumes that, if some X is a prefix of some Y, then X will appear earlier in `phrases`
+        // than Y. In practice, lexicographic sorting makes this true most of the time. It's possible that we won't properly group everything
+        // that could be grouped under a common prefix, though, in which case we'll have some
+        // duplicate lookups.  for instance, the first three of these phrases will cluster
+        // together, but the fourth one won't (see comments below for more details).
+        //
+        // ["A", "B"]
+        // ["A", "B", "C"],
+        // ["A", "B", "C", "D"]
+        // ["A", "B", "C", "E"]
+        //
+        indexed_phrases.sort();
+
         // Now we'll identify clusters of phrases consisting of a longest phrase together with
         // shorter phrases that are prefixes of that longest phrase (and also not ends_with_prefix)
         // so that we can just recurse over the phrase graph for the longest phrase and catch
         // any non-prefix-terminal shorter phrases along the way
-        indexed_phrases.sort();
         let mut collapsed: HashMap<usize, Vec<usize>> = HashMap::new();
         let mut group: Vec<usize> = Vec::new();
         let mut ip_iter = indexed_phrases.iter().peekable();
@@ -600,8 +664,13 @@ impl FuzzyPhraseSet {
             let done_with_group = match ip_iter.peek() {
                 None => true,
                 Some(peek) => {
+                    // we're done with a group if...
+                    // ...the current item ends in a prefix
                     item.1 ||
+                        // ...or the next item is shorter than the current one, meaning the current
+                        // one can't be a prefix of the next
                         peek.0.len() <= item.0.len() ||
+                        // ...or this item is not a prefix of the next item. ie, it doesn't begin with this item's phrase
                         &peek.0[..item.0.len()] != item.0
                 },
             };
