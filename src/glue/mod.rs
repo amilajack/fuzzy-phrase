@@ -460,19 +460,14 @@ impl FuzzyPhraseSet {
         //
         //     [ [A, B], [C], [], [F, G], [H] ]
         //
-        // Intuitively, we know we want to consider "(A|B) C" and "(F|G) H", but ignore whatever
-        // query word was in position 2 (since it didn't match anything in the FuzzyMap). We also
-        // don't want to consider things like "(A|B) C (F|G) H" because that's not a continuous
-        // sequence of tokens in the query.
+        // Intuitively, we know we want to isolate "A C", "B C", "F H", and "G H" but. We'll
+        // also want to look at all possible start positions in those substrings, so "C" and "H" as
+        // well.
         //
-        // After iterating through positions 0 and 1, we know we want to consider subqueries "A C"
-        // and "B C". When we get to position 2, we see there are no matches. So we add the `sq`
-        // object with [[A, B], [C]] to `subqueries` and continue on, setting `sq` to default
-        // values. We can pick up again, iterating through positions 3 and 4. Their possibilities
-        // are non-empty, so we'll add them to the newly reset `sq`.  Finally, we'll get to the
-        // special `Ok(None)` that's chained at the end. Just like when we were in position 2,
-        // we'll push the `sq` to `subqueries`
-
+        // What we want to ignore is whatever query word was in position 2 (since it didn't match
+        // anything in the FuzzyMap).  We also don't want to consider things like "A C F H" because
+        // that's not a continuous sequence of tokens in the query.
+        //
         if phrase.len() == 0 {
             return Ok(Vec::new());
         }
@@ -506,6 +501,18 @@ impl FuzzyPhraseSet {
 
         // the sq variable starts off set to default variables.
         let mut sq: Subquery = Subquery { start_position: 0, ends_in_prefix: false, word_possibilities: Vec::new() };
+
+        // Continuing with the example from above:
+        //
+        //     [ [A, B], [C], [], [F, G], [H] ]
+        //
+        // After iterating through positions 0 and 1, we know we want to consider subqueries "A C"
+        // and "B C". When we get to position 2, we see there are no matches. So we add the `sq`
+        // object with [[A, B], [C]] to `subqueries` and continue on, setting `sq` to default
+        // values. We can pick up again, iterating through positions 3 and 4. Their possibilities
+        // are non-empty, so we'll add them to the newly reset `sq`.  Finally, we'll get to the
+        // special `Ok(None)` that's chained at the end. Just like when we were in position 2,
+        // we'll push the `sq` to `subqueries`.
         for (i, matches) in seq.chain(iter::once(Ok(None))).enumerate() {
             match matches.unwrap() {
                 Some(p) => {
@@ -535,10 +542,14 @@ impl FuzzyPhraseSet {
             }
         }
 
-        // the things we're looking for will lie entirely within one of our identified chunks of
+        // The things we're looking for will lie entirely within one of our identified chunks of
         // contiguous matched words, but could start on any of said words (they'll end, at latest,
         // and the end of the chunk), so, iterate over the chunks and then iterate over the
-        // possible start words
+        // possible start words.
+        //
+        // Continuing with the example above: by iterating over multiple start positions within
+        // each chunk, we'll end up considering "C" and "H" in addition to the combinations that
+        // start in the initial positions ("A C", "B C", "F H", "G H").
         let mut results: Vec<FuzzyWindowResult> = Vec::new();
         for chunk in subqueries.iter() {
             for i in 0..chunk.word_possibilities.len() {
