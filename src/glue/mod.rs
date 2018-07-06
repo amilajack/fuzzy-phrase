@@ -770,6 +770,13 @@ mod tests {
         lazy_static::initialize(&SET);
     }
 
+    // TODO:  test fpsb.insert <05-07-18, boblannon> //
+    // TODO:  test fpsb.insert_str <05-07-18, boblannon> //
+
+    // TODO:  test fps.from_path <05-07-18, boblannon> //
+    // TODO:  test fps.get_nonterminal_word_possibilities <05-07-18, boblannon> //
+    // TODO:  test fps.get_terminal_word_possibilities <05-07-18, boblannon> //
+
     #[test]
     fn glue_contains() -> () {
         // contains
@@ -911,6 +918,17 @@ mod tests {
             ]
         );
     }
+
+
+    // TODO: add lazy_static that constructs FuzzyPhraseSet <05-07-18, boblannon> //
+
+    // TODO: windowed search and multi-search produce the same results when handed equivalent
+    // queries (i.e., a multi-search that just passes in all the windows) <05-07-18, boblannon>
+
+    // TODO: we should test that a single multi-search and multiple individual fuzzy searches
+    // produce the same results <05-07-18, boblannon>
+
+
 }
 
 #[cfg(test)] mod fuzz_tests;
