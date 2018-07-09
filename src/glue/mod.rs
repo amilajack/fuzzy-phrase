@@ -748,8 +748,11 @@ impl FuzzyPhraseSet {
 mod tests {
     extern crate tempfile;
     extern crate lazy_static;
+    pub extern crate test_utils;
 
     use super::*;
+    use std::io::Read;
+    use glue::tests::test_utils::ensure_data;
 
     lazy_static! {
         static ref DIR: tempfile::TempDir = tempfile::tempdir().unwrap();
@@ -765,11 +768,38 @@ mod tests {
         };
     }
 
+    lazy_static! {
+        static ref TEMP_DIR: tempfile::TempDir = tempfile::tempdir().unwrap();
+        static ref FUZZY_DATA: String = {
+            let test_data = ensure_data("phrase", "us", "en", "latn", true);
+            let mut file = fs::File::open(test_data).unwrap();
+            let mut data = String::new();
+            file.read_to_string(&mut data).unwrap();
+            data
+        };
+        static ref PHRASES: Vec<&'static str> = {
+            FUZZY_DATA.trim().split("\n").collect::<Vec<&str>>()
+        };
+        static ref FUZZY_SET: FuzzyPhraseSet = {
+            let mut builder = FuzzyPhraseSetBuilder::new(&TEMP_DIR.path()).unwrap();
+            for phrase in PHRASES.iter() {
+                builder.insert_str(phrase).unwrap();
+            }
+            builder.finish().unwrap();
+
+            FuzzyPhraseSet::from_path(&TEMP_DIR.path()).unwrap()
+        };
+    }
+
     #[test]
     fn glue_build() -> () {
         lazy_static::initialize(&SET);
     }
 
+    #[test]
+    fn glue_fuzzy_build() -> (){
+        lazy_static::initialize(&FUZZY_SET);
+    }
     // TODO:  test fpsb.insert <05-07-18, boblannon> //
     // TODO:  test fpsb.insert_str <05-07-18, boblannon> //
 
@@ -919,16 +949,12 @@ mod tests {
         );
     }
 
-
-    // TODO: add lazy_static that constructs FuzzyPhraseSet <05-07-18, boblannon> //
-
     // TODO: windowed search and multi-search produce the same results when handed equivalent
     // queries (i.e., a multi-search that just passes in all the windows) <05-07-18, boblannon>
 
+
     // TODO: we should test that a single multi-search and multiple individual fuzzy searches
     // produce the same results <05-07-18, boblannon>
-
-
 }
 
 #[cfg(test)] mod fuzz_tests;
