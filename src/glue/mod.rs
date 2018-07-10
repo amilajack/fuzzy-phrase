@@ -182,6 +182,12 @@ pub struct FuzzyWindowResult {
     pub ends_in_prefix: bool,
 }
 
+impl<'a, 'b> PartialEq<FuzzyMatchResult> for FuzzyWindowResult {
+    fn eq(&self, other: &FuzzyMatchResult) -> bool {
+        self.phrase == other.phrase
+    }
+}
+
 impl FuzzyPhraseSet {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
         // the path of a fuzzy phrase set is a directory that has all the subcomponents in it at predictable URLs
@@ -746,13 +752,16 @@ impl FuzzyPhraseSet {
 
 #[cfg(test)]
 mod tests {
+    extern crate rand;
     extern crate tempfile;
     extern crate lazy_static;
     pub extern crate test_utils;
 
     use super::*;
     use std::io::Read;
+    use glue::tests::rand::Rng;
     use glue::tests::test_utils::ensure_data;
+    use glue::tests::test_utils::get_damaged_phrase;
 
     lazy_static! {
         static ref DIR: tempfile::TempDir = tempfile::tempdir().unwrap();
@@ -949,9 +958,26 @@ mod tests {
         );
     }
 
-    // TODO: windowed search and multi-search produce the same results when handed equivalent
+    // windowed search and multi-search produce the same results when handed equivalent
     // queries (i.e., a multi-search that just passes in all the windows) <05-07-18, boblannon>
+    #[test]
+    fn fuzzy_match_windowed_multi_equivalent_test() {
+        let mut damaged_phrases: Vec<String> = Vec::with_capacity(20);
+        let mut rng = rand::thread_rng();
 
+        for _i in 0..20 {
+            let phrase = rng.choose(&PHRASES).unwrap();
+            let damaged = get_damaged_phrase(phrase, |w| FUZZY_SET.can_fuzzy_match(w));
+            damaged_phrases.push(damaged);
+        }
+
+        for damaged_phrase in damaged_phrases.iter() {
+            let damaged_phrase_windows: Vec<&str> = damaged_phrase.split(' ').collect();
+            let windowed_match_result = FUZZY_SET.fuzzy_match_windows(&damaged_phrase_windows, 1, 1, true).unwrap();
+            let windowed_match_multi_result = FUZZY_SET.fuzzy_match_multi(&[(&damaged_phrase_windows, true)], 1, 1).unwrap();
+            assert_eq!(windowed_match_result[0], windowed_match_multi_result[0][0]);
+        }
+    }
 
     // TODO: we should test that a single multi-search and multiple individual fuzzy searches
     // produce the same results <05-07-18, boblannon>
