@@ -973,8 +973,8 @@ mod tests {
 
         for damaged_phrase in damaged_phrases.iter() {
             let damaged_phrase_windows: Vec<&str> = damaged_phrase.split(' ').collect();
-            let windowed_match_result = FUZZY_SET.fuzzy_match_windows(&damaged_phrase_windows, 1, 1, true).unwrap();
-            let windowed_match_multi_result = FUZZY_SET.fuzzy_match_multi(&[(&damaged_phrase_windows, true)], 1, 1).unwrap();
+            let windowed_match_result = FUZZY_SET.fuzzy_match_windows(&damaged_phrase_windows, 1, 1, false).unwrap();
+            let windowed_match_multi_result = FUZZY_SET.fuzzy_match_multi(&[(&damaged_phrase_windows, false)], 1, 1).unwrap();
             assert_eq!(windowed_match_result[0], windowed_match_multi_result[0][0]);
         }
     }
