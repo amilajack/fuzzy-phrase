@@ -782,8 +782,9 @@ mod tests {
         static ref FUZZY_DATA: String = {
             let test_data = ensure_data("phrase", "us", "en", "latn", true);
             let mut file = fs::File::open(test_data).unwrap();
-            let mut data = String::new();
-            file.read_to_string(&mut data).unwrap();
+            let mut file_data = String::new();
+            file.read_to_string(&mut file_data).unwrap();
+            let data: String = file_data[..20].to_string();
             data
         };
         static ref PHRASES: Vec<&'static str> = {
@@ -791,6 +792,7 @@ mod tests {
         };
         static ref FUZZY_SET: FuzzyPhraseSet = {
             let mut builder = FuzzyPhraseSetBuilder::new(&TEMP_DIR.path()).unwrap();
+
             for phrase in PHRASES.iter() {
                 builder.insert_str(phrase).unwrap();
             }
