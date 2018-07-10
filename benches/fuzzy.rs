@@ -24,7 +24,10 @@ pub fn benchmark(c: &mut Criterion) {
             println!("file loc is {}", f);
             f
         },
-        Err(..) => String::from("/tmp/fuzzy-map-bench/fuzzy/"),
+        Err(..) => {
+            println!("skipping fuzzy benchmarks");
+            return
+        },
     };
     let exact_data_loc = format!("{}.txt", data_basename);
     let f = File::open(exact_data_loc).expect("tried to open_file");
