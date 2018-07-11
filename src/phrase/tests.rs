@@ -550,4 +550,63 @@ fn sample_fuzzy_match_prefix() {
     assert!(typo2 != vec![correct2.clone()]);
 }
 
-// TODO: test for match_combinations_as_windows <05-07-18, boblannon> //
+#[test]
+fn sample_contains_windows() {
+    // just test everything
+    let max_phrase_dist = 2;
+    let ends_in_prefix = false;
+    for phrase in PHRASES.iter() {
+        let query_phrase = get_full(phrase);
+        let word_possibilities = get_full_variants(phrase);
+        let results = SET.match_combinations_as_windows(
+            &word_possibilities,
+            max_phrase_dist,
+            ends_in_prefix
+        ).unwrap();
+        assert!(results.len() > 0);
+        assert!(results.iter().any(|r| r.0 == query_phrase));
+    }
+}
+
+#[test]
+fn sample_contains_windows_as_prefixes() {
+    // just test everything
+    let max_phrase_dist = 2;
+    for phrase in PHRASES.iter() {
+        let query_phrase = get_full(phrase);
+        let word_possibilities = get_full_variants(phrase);
+        let results;
+        if word_possibilities.len() >= 2 {
+            results = SET.match_combinations_as_prefixes(
+                &word_possibilities[..word_possibilities.len()-1],
+                max_phrase_dist
+            ).unwrap();
+        } else {
+            results = SET.match_combinations_as_prefixes(
+                &word_possibilities,
+                max_phrase_dist
+            ).unwrap();
+        }
+        assert!(results.len() > 0);
+        if !(results.iter().any(|r| *r == query_phrase)) {
+            println!("phrase:{:?}\nresult: {:?}", query_phrase, results);
+        }
+        assert!(results.iter().any(|r| {
+            r.iter().enumerate().all(|(i, qw)| match qw {
+                QueryWord::Full { .. } => *qw == query_phrase[i],
+                QueryWord::Prefix { id_range, .. } => {
+                    match query_phrase[i] {
+                        QueryWord::Full { id, .. } => {
+                            id <= id_range.1 && id >= id_range.0
+                        },
+                        QueryWord::Prefix { .. } => {
+                            panic!("should be no prefixes");
+                        }
+                    }
+                }
+            })
+        }));
+    }
+}
+
+
