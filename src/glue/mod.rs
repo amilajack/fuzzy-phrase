@@ -752,16 +752,10 @@ impl FuzzyPhraseSet {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
     extern crate tempfile;
     extern crate lazy_static;
-    pub extern crate test_utils;
 
     use super::*;
-    use std::io::Read;
-    use glue::tests::rand::Rng;
-    use glue::tests::test_utils::ensure_data;
-    use glue::tests::test_utils::get_damaged_phrase;
 
     lazy_static! {
         static ref DIR: tempfile::TempDir = tempfile::tempdir().unwrap();
@@ -777,40 +771,11 @@ mod tests {
         };
     }
 
-    lazy_static! {
-        static ref TEMP_DIR: tempfile::TempDir = tempfile::tempdir().unwrap();
-        static ref FUZZY_DATA: String = {
-            let test_data = ensure_data("phrase", "us", "en", "latn", true);
-            let mut file = fs::File::open(test_data).unwrap();
-            let mut file_data = String::new();
-            file.read_to_string(&mut file_data).unwrap();
-            let data: String = file_data[..20].to_string();
-            data
-        };
-        static ref PHRASES: Vec<&'static str> = {
-            FUZZY_DATA.trim().split("\n").collect::<Vec<&str>>()
-        };
-        static ref FUZZY_SET: FuzzyPhraseSet = {
-            let mut builder = FuzzyPhraseSetBuilder::new(&TEMP_DIR.path()).unwrap();
-
-            for phrase in PHRASES.iter() {
-                builder.insert_str(phrase).unwrap();
-            }
-            builder.finish().unwrap();
-
-            FuzzyPhraseSet::from_path(&TEMP_DIR.path()).unwrap()
-        };
-    }
-
     #[test]
     fn glue_build() -> () {
         lazy_static::initialize(&SET);
     }
 
-    #[test]
-    fn glue_fuzzy_build() -> (){
-        lazy_static::initialize(&FUZZY_SET);
-    }
     // TODO:  test fpsb.insert <05-07-18, boblannon> //
     // TODO:  test fpsb.insert_str <05-07-18, boblannon> //
 
@@ -960,29 +925,73 @@ mod tests {
         );
     }
 
-    // windowed search and multi-search produce the same results when handed equivalent
-    // queries (i.e., a multi-search that just passes in all the windows) <05-07-18, boblannon>
-    #[test]
-    fn fuzzy_match_windowed_multi_equivalent_test() {
-        let mut damaged_phrases: Vec<String> = Vec::with_capacity(20);
-        let mut rng = rand::thread_rng();
+    lazy_static! {
+        static ref DIRECTORY: tempfile::TempDir = tempfile::tempdir().unwrap();
+        static ref TEST_SET: FuzzyPhraseSet = {
+            let mut builder = FuzzyPhraseSetBuilder::new(&DIRECTORY.path()).unwrap();
+            builder.insert_str("100 main street").unwrap();
+            builder.insert_str("100 main st").unwrap();
+            builder.insert_str("St Elizabeth").unwrap();
+            builder.insert_str("100 st washington").unwrap();
+            builder.insert_str("washington st").unwrap();
+            builder.finish().unwrap();
 
-        for _i in 0..20 {
-            let phrase = rng.choose(&PHRASES).unwrap();
-            let damaged = get_damaged_phrase(phrase, |w| FUZZY_SET.can_fuzzy_match(w));
-            damaged_phrases.push(damaged);
-        }
-
-        for damaged_phrase in damaged_phrases.iter() {
-            let damaged_phrase_windows: Vec<&str> = damaged_phrase.split(' ').collect();
-            let windowed_match_result = FUZZY_SET.fuzzy_match_windows(&damaged_phrase_windows, 1, 1, false).unwrap();
-            let windowed_match_multi_result = FUZZY_SET.fuzzy_match_multi(&[(&damaged_phrase_windows, false)], 1, 1).unwrap();
-            assert_eq!(windowed_match_result[0], windowed_match_multi_result[0][0]);
-        }
+            FuzzyPhraseSet::from_path(&DIRECTORY.path()).unwrap()
+        };
     }
 
-    // TODO: we should test that a single multi-search and multiple individual fuzzy searches
-    // produce the same results <05-07-18, boblannon>
+    #[test]
+    fn fuzzy_match_windows() -> () {
+        let empty_struct = Vec::<FuzzyWindowResult>::new();
+        //address present in the data, hence should match
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "street"], 1, 1, true).unwrap(),
+            vec![FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: true }]
+        );
+        //address not present in the data, hence should not match
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["0", "incorrect", "query"], 1, 1, true).unwrap(),
+            empty_struct
+        );
+        //end of one address is the beginning of another address
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "st"], 1, 1, false).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "st".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: false }
+            ]
+        );
+        //address contains words in another address
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "st", "washington"], 1, 1, false).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "st".to_string(), "washington".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: false }
+            ]
+        );
+        //autocomplete is applied only to the last term
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "st"], 1, 1, true).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "st".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: true },
+                FuzzyWindowResult { phrase: vec!["St".to_string()], edit_distance: 1, start_position: 2, ends_in_prefix: true }
+            ]
+        );
+    }
+
+    #[test]
+    fn multi_search_fuzzy_match_equivalence() -> () {
+        assert_eq!(
+            TEST_SET.fuzzy_match_multi(&[
+                (vec!["100"], false),
+                (vec!["100", "main"], false),
+                (vec!["100", "main", "street"], true)
+            ], 1, 1).unwrap(),
+            vec![
+                TEST_SET.fuzzy_match(&["100"], 1, 1).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main"], 1, 1).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main", "street"], 1, 1).unwrap()
+            ]
+        );
+    }
 }
 
 #[cfg(test)] mod fuzz_tests;
