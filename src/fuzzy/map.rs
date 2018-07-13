@@ -201,10 +201,6 @@ impl FuzzyMapBuilder {
         SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)).unwrap();
         self.builder.finish()
     }
-
-    pub fn bytes_written(&self) -> u64 {
-        self.builder.bytes_written()
-    }
 }
 
 #[cfg(test)]
