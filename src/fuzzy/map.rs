@@ -12,7 +12,6 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
-#[cfg(test)] extern crate reqwest;
 
 use fuzzy::util::multi_modified_damlev_hint;
 
@@ -314,81 +313,125 @@ impl<'s, 'a, A: Automaton> IntoStreamer<'a> for StreamBuilder<'s, A> {
 
 #[cfg(test)]
 mod tests {
+    extern crate tempfile;
+    extern crate lazy_static;
+
+    use std::collections::BTreeSet;
+
     use super::*;
     use fuzzy::util::multi_modified_damlev;
 
-    #[test]
-    fn lookup_test_cases_d_1() {
-        extern crate tempfile;
-        //building the structure with https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000
-        let data = reqwest::get("https://raw.githubusercontent.com/BurntSushi/fst/master/data/words-10000")
-        .expect("tried to download data")
-        .text().expect("tried to decode the data");
-        let mut words = data.trim().split("\n").collect::<Vec<&str>>();
-        words.sort();
-
-        let expect = |word: &'static str, query: &'static str| {
-            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
+    lazy_static! {
+        static ref DATA: [&'static str; 4] = [
+            include_str!("../../benches/data/phrase_test_shared_prefix.txt"),
+            include_str!("../../benches/data/phrase_test_typos.txt"),
+            include_str!("../../benches/data/phrase_test_cities_ar.txt"),
+            include_str!("../../benches/data/phrase_test_cities_ru.txt"),
+        ];
+        static ref WORDS: Vec<&'static str> = {
+            let mut bts: BTreeSet<&'static str> = BTreeSet::new();
+            for data in DATA.iter() {
+                let phrases = data.trim().split("\n").collect::<Vec<&str>>();
+                for phrase in phrases {
+                    let words = phrase.trim().split(" ");
+                    for word in words {
+                        bts.insert(word);
+                    }
+                }
+            }
+            bts.into_iter().collect()
         };
+        static ref MAP_D1: FuzzyMap = {
+            let dir = tempfile::tempdir().unwrap();
+            let file_start = dir.path().join("fuzzy");
+            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 1).unwrap();
 
-        let no_return = Vec::<FuzzyMapLookupResult>::new();
+            unsafe { FuzzyMap::from_path(&file_start).unwrap() }
+        };
+        static ref MAP_D2: FuzzyMap = {
+            let dir = tempfile::tempdir().unwrap();
+            let file_start = dir.path().join("fuzzy");
+            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 2).unwrap();
 
-        let dir = tempfile::tempdir().unwrap();
-        let file_start = dir.path().join("fuzzy");
-        FuzzyMapBuilder::build_from_iter(&file_start, words.iter().cloned(), 1).unwrap();
+            unsafe { FuzzyMap::from_path(&file_start).unwrap() }
+        };
+    }
 
-        let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
-        let query = "alazan";
-        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("albazan", query)]);
+    fn expect(word: &'static str, query: &'static str) -> FuzzyMapLookupResult {
+        FuzzyMapLookupResult { word: word.to_owned(), id: WORDS.binary_search(&word).unwrap() as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
+    }
+
+    fn get_word(id: u32) -> &'static str {
+        WORDS[id as usize]
+    }
+
+    #[test]
+    fn build_d1() {
+        lazy_static::initialize(&MAP_D1);
+    }
+
+    #[test]
+    fn lookup_test_exact_d_1() {
+        let query = "Shelton";
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), [expect("Shelton", query)]);
 
         //exact lookup, the original word in the data is - "agߪkaधaݤcݤkaqag"
-        let query = "agߪkaधaݤcݤkaqag";
-        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("agߪkaधaݤcݤkaqag", query)]);
+        let query = "Москва";
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), [expect("Москва", query)]);
+    }
 
-        //not exact lookup, the original word is - "blockquoteanciently", d=1
-        let query = "blockquteanciently";
-        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("blockquoteanciently", query)]);
+    #[test]
+    fn lookup_test_approx_d1() {
+        //not exact lookup, the original word is - "Christiana", d=1
+        let query = "Shleton";
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), [expect("Shelton", query)]);
+
+        //exact lookup, the original word in the data is - "Москва"
+        let query = "Москва";
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), [expect("Москва", query)]);
 
         //not exact lookup, d=1, more more than one suggestion because of two similiar words in the data
         //albana and albazan
-        let query = "albaza";
-        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("albana", query), expect("albazan", query)]);
+        let query = "Christina";
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), [expect("Christian", query), expect("Christiana", query)]);
 
         //include a test that explores multiple results that share an fst entry
-        let query = "fern";
-        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("farn", query), expect("fernd", query), expect("ferni", query)]);
+        let query = "Grayton";
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), [expect("Brayton", query), expect("Drayton", query)]);
 
+        let query = "Keedy";
+        let matches = MAP_D2.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), vec![])
+    }
+
+    #[test]
+    fn lookup_test_garbage_d1() {
+        let one_char_results: Vec<&'static str> = WORDS.iter().filter(|w| w.len() == 1).map(|w| *w).collect();
         //garbage input
         let query = "🤔";
-        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), no_return);
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), one_char_results.iter().map(|w| expect(w, query)).collect::<Vec<_>>());
 
         let query = "";
-        let matches = map.lookup(&query, 1, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), no_return);
+        let matches = MAP_D1.lookup(&query, 1, get_word);
+        assert_eq!(matches.unwrap(), one_char_results.iter().map(|w| expect(w, query)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn build_d2() {
+        lazy_static::initialize(&MAP_D2);
     }
 
     #[test]
     fn lookup_test_cases_d_2() {
-        extern crate tempfile;
-        let words = vec!["100", "main", "street"];
-
-        let expect = |word: &'static str, query: &'static str| {
-            FuzzyMapLookupResult { word: word.to_owned(), id: words.binary_search(&word).unwrap() as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
-        };
-
-        let dir = tempfile::tempdir().unwrap();
-        let file_start = dir.path().join("fuzzy");
-        FuzzyMapBuilder::build_from_iter(&file_start, words.iter().cloned(), 2).unwrap();
-
-        let map = unsafe { FuzzyMap::from_path(&file_start).unwrap() };
-        let query = "sret";
-        let matches = map.lookup(&query, 2, |id| &words[id as usize]);
-        assert_eq!(matches.unwrap(), [expect("street", query)])
+        let query = "Keedy";
+        let matches = MAP_D2.lookup(&query, 2, get_word);
+        assert_eq!(matches.unwrap(), [expect("Keesey", query), expect("Kennedy", query)])
     }
 }
