@@ -1,11 +1,9 @@
-use fst::{IntoStreamer, Streamer, Automaton};
 use std::fs;
 use std::error::Error;
 use std::cmp::{min, Ordering};
 use itertools::Itertools;
 use fst::raw;
 use fst::Error as FstError;
-use fst::automaton::{AlwaysMatch};
 #[cfg(feature = "mmap")]
 use std::path::{Path, PathBuf};
 use std::fs::File;
@@ -53,39 +51,6 @@ impl FuzzyMap {
         let mf_reader = BufReader::new(fs::File::open(file_start.with_extension(".msg"))?);
         let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
         Ok(FuzzyMap { id_list: id_list.0, fst: fst })
-    }
-
-    pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
-        self.fst.contains_key(key)
-    }
-
-    pub fn stream(&self) -> Stream {
-        Stream(self.fst.stream())
-    }
-
-    pub fn range(&self) -> StreamBuilder {
-        StreamBuilder(self.fst.range())
-    }
-
-    pub fn search<A: Automaton>(&self, aut: A) -> StreamBuilder<A> {
-        StreamBuilder(self.fst.search(aut))
-    }
-
-    pub fn len(&self) -> usize {
-        self.fst.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.fst.is_empty()
-    }
-
-    pub fn as_fst(&self) -> &raw::Fst {
-        &self.fst
-    }
-
-    // this one is from Map
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<u64> {
-        self.fst.get(key).map(|output| output.value())
     }
 
     fn find_matching_variants(&self, query: &[u8], indices: &[usize], position: usize, edit_distance: usize, node: &raw::Node, so_far: u64, out: &mut Vec<u64>) {
@@ -219,13 +184,6 @@ impl FuzzyMapBuilder {
         }
     }
 
-    pub fn extend_iter<'a, T, I>(&mut self, iter: I) -> Result<(), FstError> where T: AsRef<[u8]>, I: IntoIterator<Item=&'a str> {
-        for (i, word) in iter.into_iter().enumerate() {
-            self.insert(word, i as u32);
-        }
-        Ok(())
-    }
-
     pub fn finish(mut self) -> Result<(), FstError> {
         self.word_variants.sort();
 
@@ -246,68 +204,6 @@ impl FuzzyMapBuilder {
 
     pub fn bytes_written(&self) -> u64 {
         self.builder.bytes_written()
-    }
-}
-
-pub struct Stream<'s, A=AlwaysMatch>(raw::Stream<'s, A>) where A: Automaton;
-
-impl<'s, A: Automaton> Stream<'s, A> {
-    #[doc(hidden)]
-    pub fn new(fst_stream: raw::Stream<'s, A>) -> Self {
-        Stream(fst_stream)
-    }
-
-    pub fn into_byte_vec(self) -> Vec<(Vec<u8>, u64)> {
-        self.0.into_byte_vec()
-    }
-
-    pub fn into_str_vec(self) -> Result<Vec<(String, u64)>, FstError> {
-        self.0.into_str_vec()
-    }
-
-    pub fn into_strs(self) -> Result<Vec<String>, FstError> {
-        self.0.into_str_keys()
-    }
-
-    pub fn into_bytes(self) -> Vec<Vec<u8>> {
-        self.0.into_byte_keys()
-    }
-}
-
-impl<'a, 's, A: Automaton> Streamer<'a> for Stream<'s, A> {
-    type Item = (&'a [u8], u64);
-
-    fn next(&'a mut self) -> Option<Self::Item> {
-        self.0.next().map(|(key, out)| (key, out.value()))
-    }
-}
-
-pub struct StreamBuilder<'s, A=AlwaysMatch>(raw::StreamBuilder<'s, A>);
-
-impl<'s, A: Automaton> StreamBuilder<'s, A> {
-    pub fn ge<T: AsRef<[u8]>>(self, bound: T) -> Self {
-        StreamBuilder(self.0.ge(bound))
-    }
-
-    pub fn gt<T: AsRef<[u8]>>(self, bound: T) -> Self {
-        StreamBuilder(self.0.gt(bound))
-    }
-
-    pub fn le<T: AsRef<[u8]>>(self, bound: T) -> Self {
-        StreamBuilder(self.0.le(bound))
-    }
-
-    pub fn lt<T: AsRef<[u8]>>(self, bound: T) -> Self {
-        StreamBuilder(self.0.lt(bound))
-    }
-}
-
-impl<'s, 'a, A: Automaton> IntoStreamer<'a> for StreamBuilder<'s, A> {
-    type Item = (&'a [u8], u64);
-    type Into = Stream<'s, A>;
-
-    fn into_stream(self) -> Self::Into {
-        Stream(self.0.into_stream())
     }
 }
 
