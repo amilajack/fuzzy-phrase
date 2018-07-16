@@ -12,6 +12,7 @@ use fst::Streamer;
 
 use ::prefix::{PrefixSet, PrefixSetBuilder};
 use ::phrase::{PhraseSet, PhraseSetBuilder};
+use ::phrase::util::PhraseSetError;
 use ::phrase::query::{QueryPhrase, QueryWord};
 use ::fuzzy::{FuzzyMap, FuzzyMapBuilder};
 use regex;
@@ -34,6 +35,7 @@ struct FuzzyPhraseSetMetadata {
     index_type: String,
     format_version: u32,
     fuzzy_enabled_scripts: Vec<String>,
+    max_edit_distance: u8,
 }
 
 impl Default for FuzzyPhraseSetMetadata {
@@ -42,6 +44,7 @@ impl Default for FuzzyPhraseSetMetadata {
             index_type: "fuzzy_phrase_set".to_string(),
             format_version: 1,
             fuzzy_enabled_scripts: vec!["Latin".to_string(), "Greek".to_string(), "Cyrillic".to_string()],
+            max_edit_distance: 1,
         }
     }
 }
@@ -92,6 +95,9 @@ impl FuzzyPhraseSetBuilder {
     }
 
     pub fn finish(mut self) -> Result<(), Box<Error>> {
+        // in the future we could make some of this setable from the outside
+        let metadata = FuzzyPhraseSetMetadata::default();
+
         // we can go from name -> tmpid
         // we need to go from tmpid -> id
         // so build a mapping that does that
@@ -100,9 +106,10 @@ impl FuzzyPhraseSetBuilder {
         let prefix_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("prefix.fst")))?);
         let mut prefix_set_builder = PrefixSetBuilder::new(prefix_writer)?;
 
-        let mut fuzzy_map_builder = FuzzyMapBuilder::new(self.directory.join(Path::new("fuzzy")), 1)?;
-
-        let metadata = FuzzyPhraseSetMetadata::default();
+        let mut fuzzy_map_builder = FuzzyMapBuilder::new(
+            self.directory.join(Path::new("fuzzy")),
+            metadata.max_edit_distance
+        )?;
 
         // this is a regex set to decide whether to index somehing for fuzzy matching
         let allowed_scripts = &metadata.fuzzy_enabled_scripts.iter().map(
@@ -166,6 +173,7 @@ pub struct FuzzyPhraseSet {
     fuzzy_map: FuzzyMap,
     word_list: Vec<String>,
     script_regex: regex::Regex,
+    max_edit_distance: u8,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
@@ -214,6 +222,8 @@ impl FuzzyPhraseSet {
             &unicode_ranges::get_pattern_for_scripts(&allowed_scripts),
         ).unwrap();
 
+        let max_edit_distance = metadata.max_edit_distance;
+
         let prefix_path = directory.join(Path::new("prefix.fst"));
         if !prefix_path.exists() {
             return Err(Box::new(IoError::new(IoErrorKind::NotFound, "Prefix FST does not exist")));
@@ -242,7 +252,9 @@ impl FuzzyPhraseSet {
         let fuzzy_path = directory.join(Path::new("fuzzy"));
         let fuzzy_map = unsafe { FuzzyMap::from_path(&fuzzy_path) }?;
 
-        Ok(FuzzyPhraseSet { prefix_set, phrase_set, fuzzy_map, word_list, script_regex })
+        Ok(FuzzyPhraseSet {
+            prefix_set, phrase_set, fuzzy_map, word_list, script_regex, max_edit_distance
+        })
     }
 
     pub fn can_fuzzy_match(&self, word: &str) -> bool {
@@ -355,10 +367,15 @@ impl FuzzyPhraseSet {
 
         let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
 
-        // later we should preserve the max edit distance we can support with the structure we have built
-        // and either throw an error or silently constrain to that
-        // but for now, we're hard-coded to one at build time, so hard coded to one and read time
-        let edit_distance = min(max_word_dist, 1);
+        let edit_distance = if max_word_dist > self.max_edit_distance {
+            return Err(Box::new(PhraseSetError::new(format!(
+                "The maximum configured edit distance for this index is {}; {} requested",
+                self.max_edit_distance,
+                max_word_dist
+            ).as_str())));
+        } else {
+            max_word_dist
+        };
 
         // the map is executed lazily, so we can early-bail without correcting everything
         for matches in phrase.iter().map(|word| self.get_nonterminal_word_possibilities(word.as_ref(), edit_distance)) {
@@ -403,10 +420,15 @@ impl FuzzyPhraseSet {
             return Ok(Vec::new());
         }
 
-        // later we should preserve the max edit distance we can support with the structure we have built
-        // and either throw an error or silently constrain to that
-        // but for now, we're hard-coded to one at build time, so hard coded to one and read time
-        let edit_distance = min(max_word_dist, 1);
+        let edit_distance = if max_word_dist > self.max_edit_distance {
+            return Err(Box::new(PhraseSetError::new(format!(
+                "The maximum configured edit distance for this index is {}; {} requested",
+                self.max_edit_distance,
+                max_word_dist
+            ).as_str())));
+        } else {
+            max_word_dist
+        };
 
         // all words but the last one: fuzzy-lookup if eligible, or exact-match if not,
         // and return nothing if those fail
@@ -775,6 +797,15 @@ mod tests {
     #[test]
     fn glue_build() -> () {
         lazy_static::initialize(&SET);
+
+        let mut contents: Vec<_> = fs::read_dir(&DIR.path()).unwrap().map(|entry| {
+            entry.unwrap().file_name().into_string().unwrap()
+        }).collect();
+        contents.sort();
+        assert_eq!(
+            contents,
+            vec!["fuzzy.fst", "fuzzy.msg", "metadata.json", "phrase.fst", "prefix.fst"]
+        );
     }
 
     // TODO:  test fpsb.insert <05-07-18, boblannon> //
@@ -867,6 +898,8 @@ mod tests {
                 FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 2 },
             ]
         );
+
+        assert!(SET.fuzzy_match(&["100", "man", "stret"], 2, 2).is_err());
     }
 
     #[test]
@@ -884,6 +917,8 @@ mod tests {
                 FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "str".to_string()], edit_distance: 1 },
             ]
         );
+
+        assert!(SET.fuzzy_match_prefix(&["100", "man"], 2, 1).is_err());
     }
 
     #[test]

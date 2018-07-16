@@ -4,8 +4,6 @@ mod util;
 pub use self::map::FuzzyMap;
 pub use self::map::FuzzyMapBuilder;
 
-#[cfg(test)] extern crate reqwest;
-
 #[inline(always)]
 fn get_variants<'a>(word: &str, edit_distance: u8) -> HashSet<String> {
     let mut variants: HashSet<String> = HashSet::new();
