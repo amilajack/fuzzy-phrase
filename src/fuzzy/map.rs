@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn lookup_test_approx_d1() {
-        //not exact lookup, the original word is - "Christiana", d=1
+        //not exact lookup, the original word is - "Shelton", d=1
         let query = "Shleton";
         let matches = MAP_D1.lookup(&query, 1, get_word);
         assert_eq!(matches.unwrap(), [expect("Shelton", query)]);
