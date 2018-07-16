@@ -567,9 +567,9 @@ impl FuzzyPhraseSet {
                 )?;
                 for (phrase_p, sq_ends_in_prefix) in &phrase_matches {
                     results.push(FuzzyWindowResult {
-                        phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
+                        phrase: phrase_p.iter().enumerate().map(|(j, qw)| match qw {
                             QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
-                            QueryWord::Prefix { .. } => phrase[chunk.start_position + i].as_ref().to_owned(),
+                            QueryWord::Prefix { .. } => phrase[chunk.start_position + i + j].as_ref().to_owned(),
                         }).collect::<Vec<String>>(),
                         edit_distance: phrase_p.iter().map(|qw| match qw {
                             QueryWord::Full { edit_distance, .. } => *edit_distance,
