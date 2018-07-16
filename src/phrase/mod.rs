@@ -93,7 +93,7 @@ impl PhraseSet {
             let (key, edit_distance) = match word {
                 QueryWord::Full { key, edit_distance, .. } => (*key, *edit_distance),
                 _ => return Err(PhraseSetError::new(
-                    "The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"
+                    "The query submitted has a QueryWord::Prefix. This function only accepts QueryWord:Full"
                 )),
             };
             if edit_distance > budget_remaining {
@@ -296,6 +296,11 @@ impl PhraseSet {
                     }
                 },
                 QueryWord::Prefix { key_range, .. } => {
+                    if !ends_in_prefix {
+                        return Err(PhraseSetError::new(
+                            "The query submitted has a QueryWord::Prefix. This function only accepts QueryWord:Full"
+                        ))
+                    }
                     if self.matches_prefix_range(
                         node.addr(),
                         *key_range
