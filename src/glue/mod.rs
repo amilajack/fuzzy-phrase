@@ -168,18 +168,25 @@ pub struct FuzzyPhraseSet {
     script_regex: regex::Regex,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct FuzzyMatchResult {
-    pub phrase: Vec<String>,
     pub edit_distance: u8,
+    pub phrase: Vec<String>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct FuzzyWindowResult {
-    pub phrase: Vec<String>,
     pub edit_distance: u8,
+    pub phrase: Vec<String>,
     pub start_position: usize,
     pub ends_in_prefix: bool,
+}
+
+impl<'a, 'b> PartialEq<FuzzyMatchResult> for FuzzyWindowResult {
+    fn eq(&self, other: &FuzzyMatchResult) -> bool {
+        self.edit_distance == other.edit_distance;
+        self.phrase == other.phrase
+    }
 }
 
 impl FuzzyPhraseSet {
@@ -560,9 +567,9 @@ impl FuzzyPhraseSet {
                 )?;
                 for (phrase_p, sq_ends_in_prefix) in &phrase_matches {
                     results.push(FuzzyWindowResult {
-                        phrase: phrase_p.iter().enumerate().map(|(i, qw)| match qw {
+                        phrase: phrase_p.iter().enumerate().map(|(j, qw)| match qw {
                             QueryWord::Full { id, .. } => self.word_list[*id as usize].clone(),
-                            QueryWord::Prefix { .. } => phrase[chunk.start_position + i].as_ref().to_owned(),
+                            QueryWord::Prefix { .. } => phrase[chunk.start_position + i + j].as_ref().to_owned(),
                         }).collect::<Vec<String>>(),
                         edit_distance: phrase_p.iter().map(|qw| match qw {
                             QueryWord::Full { edit_distance, .. } => *edit_distance,
@@ -919,16 +926,73 @@ mod tests {
         );
     }
 
+    lazy_static! {
+        static ref DIRECTORY: tempfile::TempDir = tempfile::tempdir().unwrap();
+        static ref TEST_SET: FuzzyPhraseSet = {
+            let mut builder = FuzzyPhraseSetBuilder::new(&DIRECTORY.path()).unwrap();
+            builder.insert_str("100 main street").unwrap();
+            builder.insert_str("100 main st").unwrap();
+            builder.insert_str("St Elizabeth").unwrap();
+            builder.insert_str("100 st washington").unwrap();
+            builder.insert_str("washington st").unwrap();
+            builder.finish().unwrap();
 
-    // TODO: add lazy_static that constructs FuzzyPhraseSet <05-07-18, boblannon> //
+            FuzzyPhraseSet::from_path(&DIRECTORY.path()).unwrap()
+        };
+    }
 
-    // TODO: windowed search and multi-search produce the same results when handed equivalent
-    // queries (i.e., a multi-search that just passes in all the windows) <05-07-18, boblannon>
+    #[test]
+    fn fuzzy_match_windows() -> () {
+        let empty_struct = Vec::<FuzzyWindowResult>::new();
+        //address present in the data, hence should match
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "street"], 1, 1, true).unwrap(),
+            vec![FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: true }]
+        );
+        //address not present in the data, hence should not match
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["0", "incorrect", "query"], 1, 1, true).unwrap(),
+            empty_struct
+        );
+        //end of one address is the beginning of another address
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "st"], 1, 1, false).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "st".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: false }
+            ]
+        );
+        //address contains words in another address
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "st", "washington"], 1, 1, false).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "st".to_string(), "washington".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: false }
+            ]
+        );
+        //autocomplete is applied only to the last term
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "st"], 1, 1, true).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "st".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: true },
+                FuzzyWindowResult { phrase: vec!["St".to_string()], edit_distance: 1, start_position: 2, ends_in_prefix: true }
+            ]
+        );
+    }
 
-    // TODO: we should test that a single multi-search and multiple individual fuzzy searches
-    // produce the same results <05-07-18, boblannon>
-
-
+    #[test]
+    fn multi_search_fuzzy_match_equivalence() -> () {
+        assert_eq!(
+            TEST_SET.fuzzy_match_multi(&[
+                (vec!["100"], false),
+                (vec!["100", "main"], false),
+                (vec!["100", "main", "street"], true)
+            ], 1, 1).unwrap(),
+            vec![
+                TEST_SET.fuzzy_match(&["100"], 1, 1).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main"], 1, 1).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main", "street"], 1, 1).unwrap()
+            ]
+        );
+    }
 }
 
 #[cfg(test)] mod fuzz_tests;
