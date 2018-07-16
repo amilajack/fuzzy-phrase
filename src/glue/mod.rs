@@ -168,16 +168,16 @@ pub struct FuzzyPhraseSet {
     script_regex: regex::Regex,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct FuzzyMatchResult {
-    pub phrase: Vec<String>,
     pub edit_distance: u8,
+    pub phrase: Vec<String>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct FuzzyWindowResult {
-    pub phrase: Vec<String>,
     pub edit_distance: u8,
+    pub phrase: Vec<String>,
     pub start_position: usize,
     pub ends_in_prefix: bool,
 }
