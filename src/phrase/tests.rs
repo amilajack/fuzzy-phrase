@@ -586,7 +586,6 @@ fn sample_match_combinations_as_windows_all_full() {
         query_phrase.pop();
         word_possibilities.pop();
 
-
         let results = SET.match_combinations_as_windows(
             &word_possibilities,
             max_phrase_dist,
@@ -605,8 +604,8 @@ fn sample_match_combinations_as_windows_all_prefix() {
     for phrase in PHRASES.iter() {
         let query_phrase = get_prefix(phrase);
         let word_possibilities = get_prefix_variants(phrase);
-        let results;
-        results = SET.match_combinations_as_windows(
+
+        let results = SET.match_combinations_as_windows(
             &word_possibilities,
             max_phrase_dist,
             true
@@ -614,4 +613,101 @@ fn sample_match_combinations_as_windows_all_prefix() {
         assert!(results.len() > 0);
         assert!(results.iter().any(|r| (&r.0, r.1) == (&query_phrase, true)));
     }
+}
+
+#[test]
+fn sample_prefix_contains_windows_overlap() {
+    let word_possibilities = get_prefix_variants("84# Gleason Hollow Rd");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        true
+    ).unwrap();
+
+    // this should match two different results, one of which is a prefix of the other, since we
+    // augmented the data with some prefix examples
+    assert_eq!(
+        results,
+        vec![
+            // this one doesn't end in the prefix
+            (get_full("84# Gleason Hollow"), false),
+            // but this one does
+            (get_prefix("84# Gleason Hollow Rd"), true),
+        ]
+    );
+}
+
+#[test]
+fn sample_prefix_contains_windows_substring() {
+    // this works
+    let word_possibilities = get_prefix_variants("59 Old Ne");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        true
+    ).unwrap();
+    assert_eq!(results, vec![(get_prefix("59 Old Ne"), true)]);
+
+    // but this will fail because we can't window-recurse with eip=false and a PrefixWord
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        false
+    );
+    assert!(results.is_err());
+
+    // so let's try with just full words...
+    // except this also doesn't work when searched non-prefix
+    let word_possibilities = get_full_variants("59 Old New");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        false
+    ).unwrap();
+    assert_eq!(results, vec![]);
+
+    // and it doesn't work with crap added to the end of it
+    let word_possibilities = get_prefix_variants("59 Old New Gleason");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        true
+    ).unwrap();
+    assert_eq!(results, vec![]);
+
+    // or to the beginning -- we'd need to have a different start position
+    let word_possibilities = get_prefix_variants("Gleason 59 Old New");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        true
+    ).unwrap();
+    assert_eq!(results, vec![]);
+
+    // on the other hand, we *should* be able to find a whole string with other stuff after it
+    let word_possibilities = get_prefix_variants("59 Old New Milford Rd Gleason");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        true
+    ).unwrap();
+    assert_eq!(results, vec![(get_full("59 Old New Milford Rd"), false)]);
+
+    // and should also work with no prefixes
+    let word_possibilities = get_full_variants("59 Old New Milford Rd Gleason");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        false
+    ).unwrap();
+    assert_eq!(results, vec![(get_full("59 Old New Milford Rd"), false)]);
+
+    // on the other hand, it still shouldn't work with stuff at the beginning
+    let word_possibilities = get_prefix_variants("Gleason 59 Old New Milford Rd");
+    let results = SET.match_combinations_as_windows(
+        &word_possibilities,
+        1,
+        true
+    ).unwrap();
+    assert_eq!(results, vec![]);
 }

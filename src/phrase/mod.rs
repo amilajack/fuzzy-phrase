@@ -296,6 +296,11 @@ impl PhraseSet {
                     }
                 },
                 QueryWord::Prefix { key_range, .. } => {
+                    if !ends_in_prefix {
+                        return Err(PhraseSetError::new(
+                            "The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"
+                        ))
+                    }
                     if self.matches_prefix_range(
                         node.addr(),
                         *key_range
