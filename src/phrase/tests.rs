@@ -367,8 +367,15 @@ lazy_static! {
     static ref PREFIX_DATA: &'static str = include_str!("../../benches/data/phrase_test_shared_prefix.txt");
     static ref TYPO_DATA: &'static str = include_str!("../../benches/data/phrase_test_typos.txt");
     static ref PHRASES: Vec<&'static str> = {
+        // shared-prefix test set
         let mut phrases = PREFIX_DATA.trim().split("\n").collect::<Vec<&str>>();
+        // typos test set
         phrases.extend(TYPO_DATA.trim().split("\n"));
+        // take a few of the prefix test data set examples and add more phrases that are strict
+        // prefixes of entries we already have to test windowed search
+        phrases.extend(PREFIX_DATA.trim().split("\n").take(5).map(|phrase| {
+            phrase.rsplitn(2, " ").skip(1).next().unwrap()
+        }));
         phrases
     };
     static ref WORDS: BTreeMap<&'static str, u32> = {
@@ -524,7 +531,7 @@ fn get_prefix_variants(phrase: &str) -> Vec<Vec<QueryWord>> {
 }
 
 #[test]
-fn sample_fuzzy_match() {
+fn sample_match_combinations() {
     let correct = get_full("53# Country View Dr");
     let no_typo = SET.match_combinations(&get_full_variants("53# Country View Dr"), 1).unwrap();
     assert!(no_typo == vec![correct.clone()]);
@@ -534,7 +541,7 @@ fn sample_fuzzy_match() {
 }
 
 #[test]
-fn sample_fuzzy_match_prefix() {
+fn sample_match_combinations_as_prefixes() {
     let correct1 = get_prefix("53# Country");
     let no_typo1 = SET.match_combinations_as_prefixes(&get_prefix_variants("53# Country"), 1).unwrap();
     assert!(no_typo1 == vec![correct1.clone()]);
@@ -551,7 +558,7 @@ fn sample_fuzzy_match_prefix() {
 }
 
 #[test]
-fn sample_contains_windows() {
+fn sample_contains_windows_simple() {
     // just test everything
     let max_phrase_dist = 2;
     let ends_in_prefix = false;
@@ -564,83 +571,47 @@ fn sample_contains_windows() {
             ends_in_prefix
         ).unwrap();
         assert!(results.len() > 0);
-        assert!(results.iter().any(|r| r.0 == query_phrase));
+        assert!(results.iter().any(|r| (&r.0, r.1) == (&query_phrase, false)));
     }
 }
 
 #[test]
-fn sample_full_contains_windows_as_prefixes() {
+fn sample_match_combinations_as_windows_all_full() {
     // just test everything
     let max_phrase_dist = 2;
     for phrase in PHRASES.iter() {
-        let query_phrase = get_full(phrase);
-        let word_possibilities = get_full_variants(phrase);
-        let results;
-        if word_possibilities.len() >= 2 {
-            results = SET.match_combinations_as_prefixes(
-                &word_possibilities[..word_possibilities.len()-1],
-                max_phrase_dist
-            ).unwrap();
-        } else {
-            results = SET.match_combinations_as_prefixes(
-                &word_possibilities,
-                max_phrase_dist
-            ).unwrap();
-        }
+        let mut query_phrase = get_full(phrase);
+        let mut word_possibilities = get_full_variants(phrase);
+        // trim the last element to test prefix functionality
+        query_phrase.pop();
+        word_possibilities.pop();
+
+
+        let results = SET.match_combinations_as_windows(
+            &word_possibilities,
+            max_phrase_dist,
+            true
+        ).unwrap();
+
         assert!(results.len() > 0);
-        if !(results.iter().any(|r| *r == query_phrase)) {
-            println!("phrase:{:?}\nresult: {:?}", query_phrase, results);
-        }
-        assert!(results.iter().any(|r| {
-            r.iter().enumerate().all(|(i, qw)| match qw {
-                QueryWord::Full { .. } => *qw == query_phrase[i],
-                QueryWord::Prefix { id_range, .. } => {
-                    match query_phrase[i] {
-                        QueryWord::Full { id, .. } => {
-                            id <= id_range.1 && id >= id_range.0
-                        },
-                        QueryWord::Prefix { .. } => {
-                            panic!("should be no prefixes");
-                        }
-                    }
-                }
-            })
-        }));
+        assert!(results.iter().any(|r| (&r.0, r.1) == (&query_phrase, true)));
     }
 }
 
-
 #[test]
-fn sample_prefix_contains_windows_as_prefixes() {
+fn sample_match_combinations_as_windows_all_prefix() {
     // just test everything
     let max_phrase_dist = 2;
     for phrase in PHRASES.iter() {
-        let query_phrase = get_full(phrase);
+        let query_phrase = get_prefix(phrase);
         let word_possibilities = get_prefix_variants(phrase);
         let results;
-        results = SET.match_combinations_as_prefixes(
+        results = SET.match_combinations_as_windows(
             &word_possibilities,
-            max_phrase_dist
+            max_phrase_dist,
+            true
         ).unwrap();
         assert!(results.len() > 0);
-        if !(results.iter().any(|r| *r == query_phrase)) {
-            println!("phrase:{:?}\nresult: {:?}", query_phrase, results);
-        }
-        assert!(results.iter().any(|r| {
-            r.iter().enumerate().all(|(i, qw)| match qw {
-                QueryWord::Full { .. } => *qw == query_phrase[i],
-                QueryWord::Prefix { id_range, .. } => {
-                    match query_phrase[i] {
-                        QueryWord::Full { id, .. } => {
-                            id <= id_range.1 && id >= id_range.0
-                        },
-                        QueryWord::Prefix { .. } => {
-                            panic!("should be no prefixes");
-                        }
-                    }
-                }
-            })
-        }));
+        assert!(results.iter().any(|r| (&r.0, r.1) == (&query_phrase, true)));
     }
 }
-
