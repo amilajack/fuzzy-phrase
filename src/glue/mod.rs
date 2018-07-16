@@ -4,7 +4,7 @@ use std::error::Error;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
 use std::fs;
 use std::iter;
-use std::cmp::{min, Ord};
+use std::cmp::Ord;
 use std::fmt::Debug;
 
 use serde_json;
@@ -509,7 +509,15 @@ impl FuzzyPhraseSet {
         }
         let mut subqueries: Vec<Subquery> = Vec::new();
 
-        let edit_distance = min(max_word_dist, 1);
+        let edit_distance = if max_word_dist > self.max_edit_distance {
+            return Err(Box::new(PhraseSetError::new(format!(
+                "The maximum configured edit distance for this index is {}; {} requested",
+                self.max_edit_distance,
+                max_word_dist
+            ).as_str())));
+        } else {
+            max_word_dist
+        };
 
         // this block creates an iterator of possible fuzzy matches for each word in phrase
         let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, Box<Error>>>> = if ends_in_prefix {
@@ -628,7 +636,15 @@ impl FuzzyPhraseSet {
             return Ok(Vec::new());
         }
 
-        let edit_distance = min(max_word_dist, 1);
+        let edit_distance = if max_word_dist > self.max_edit_distance {
+            return Err(Box::new(PhraseSetError::new(format!(
+                "The maximum configured edit distance for this index is {}; {} requested",
+                self.max_edit_distance,
+                max_word_dist
+            ).as_str())));
+        } else {
+            max_word_dist
+        };
 
         // fuzzy-lookup all the words, but only once apiece (per prefix-y-ness type)
         let mut all_words: HashMap<(&str, bool), Vec<QueryWord>> = HashMap::new();
