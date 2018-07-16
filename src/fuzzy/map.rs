@@ -50,8 +50,8 @@ impl FuzzyMap {
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
         let file_start = path.as_ref();
-        let fst = raw::Fst::from_path(file_start.with_extension(".fst")).unwrap();
-        let mf_reader = BufReader::new(fs::File::open(file_start.with_extension(".msg"))?);
+        let fst = raw::Fst::from_path(file_start.with_extension("fst")).unwrap();
+        let mf_reader = BufReader::new(fs::File::open(file_start.with_extension("msg"))?);
         let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
         Ok(FuzzyMap { id_list: id_list.0, fst: fst })
     }
@@ -191,7 +191,7 @@ pub struct FuzzyMapBuilder {
 impl FuzzyMapBuilder {
     pub fn new<P: AsRef<Path>>(path: P, edit_distance: u8) -> Result<Self, Box<Error>> {
         let file_start = path.as_ref().to_owned();
-        let fst_wtr = BufWriter::new(fs::File::create(file_start.with_extension(".fst"))?);
+        let fst_wtr = BufWriter::new(fs::File::create(file_start.with_extension("fst"))?);
 
         Ok(FuzzyMapBuilder {
             builder: raw::Builder::new_type(fst_wtr, 0)?,
@@ -240,7 +240,7 @@ impl FuzzyMapBuilder {
             };
             self.builder.insert(key, id)?;
         }
-        let mf_wtr = BufWriter::new(fs::File::create(self.file_path.with_extension(".msg"))?);
+        let mf_wtr = BufWriter::new(fs::File::create(self.file_path.with_extension("msg"))?);
         SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)).unwrap();
         self.builder.finish()
     }
