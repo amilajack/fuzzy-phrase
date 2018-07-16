@@ -5,7 +5,6 @@ extern crate itertools;
 
 use std::path::{Path, PathBuf};
 use rand::Rng;
-use rand::distributions::Alphanumeric;
 use std::io::{self, BufRead};
 use std::fs;
 use std::iter;
