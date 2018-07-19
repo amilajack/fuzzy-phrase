@@ -366,6 +366,16 @@ impl PhraseSet {
         let mut max_key = phrase.full_word_key();
         let mut min_key = phrase.full_word_key();
         let (last_id_min, last_id_max) = phrase.prefix_key_range().unwrap();
+        // let (last_id_min, last_id_max) = phrase.prefix_key_range().ok_or(0);
+
+        // let last_id_min = match phrase.prefix_key_range() {
+        //     None => None,
+        //     Some(id) => Some(id)
+        // };
+        // let last_id_max = match phrase.prefix_key_range() {
+        //     None => None,
+        //     Some(id) => Some(id)
+        // };
         min_key.extend_from_slice(&last_id_min);
         max_key.extend_from_slice(&last_id_max);
         let mut range_stream = self.0.range().ge(min_key).le(max_key).into_stream();
