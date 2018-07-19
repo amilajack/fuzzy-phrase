@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use fuzzy::util::multi_modified_damlev_hint;
 
@@ -198,7 +199,10 @@ impl FuzzyMapBuilder {
             self.builder.insert(key, id)?;
         }
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.with_extension("msg"))?);
-        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr));
+        match SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)) {
+            Err(_e) => return Err(FstError::Io(IoError::new(IoErrorKind::InvalidInput, "File exists and is not a directory"))),
+            Ok(()) => ()
+        };
         self.builder.finish()
     }
 }
@@ -234,23 +238,23 @@ mod tests {
             bts.into_iter().collect()
         };
         static ref MAP_D1: FuzzyMap = {
-            let dir = tempfile::tempdir()?;
+            let dir = tempfile::tempdir().unwrap();
             let file_start = dir.path().join("fuzzy");
-            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 1)?;
+            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 1).unwrap();
 
-            unsafe { FuzzyMap::from_path(&file_start)? }
+            unsafe { FuzzyMap::from_path(&file_start).unwrap() }
         };
         static ref MAP_D2: FuzzyMap = {
-            let dir = tempfile::tempdir()?;
+            let dir = tempfile::tempdir().unwrap();
             let file_start = dir.path().join("fuzzy");
-            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 2)?;
+            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 2).unwrap();
 
-            unsafe { FuzzyMap::from_path(&file_start)? }
+            unsafe { FuzzyMap::from_path(&file_start).unwrap() }
         };
     }
 
     fn expect(word: &'static str, query: &'static str) -> FuzzyMapLookupResult {
-        FuzzyMapLookupResult { word: word.to_owned(), id: WORDS.binary_search(&word)? as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
+        FuzzyMapLookupResult { word: word.to_owned(), id: WORDS.binary_search(&word).unwrap() as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
     }
 
     fn get_word(id: u32) -> &'static str {
