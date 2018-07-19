@@ -47,7 +47,7 @@ impl FuzzyMap {
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
         let file_start = path.as_ref();
-        let fst = raw::Fst::from_path(file_start.with_extension("fst")).unwrap();
+        let fst = raw::Fst::from_path(file_start.with_extension("fst"))?;
         let mf_reader = BufReader::new(fs::File::open(file_start.with_extension("msg"))?);
         let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
         Ok(FuzzyMap { id_list: id_list.0, fst: fst })
@@ -198,7 +198,7 @@ impl FuzzyMapBuilder {
             self.builder.insert(key, id)?;
         }
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.with_extension("msg"))?);
-        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)).unwrap();
+        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr));
         self.builder.finish()
     }
 }
@@ -234,23 +234,23 @@ mod tests {
             bts.into_iter().collect()
         };
         static ref MAP_D1: FuzzyMap = {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = tempfile::tempdir()?;
             let file_start = dir.path().join("fuzzy");
-            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 1).unwrap();
+            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 1)?;
 
-            unsafe { FuzzyMap::from_path(&file_start).unwrap() }
+            unsafe { FuzzyMap::from_path(&file_start)? }
         };
         static ref MAP_D2: FuzzyMap = {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = tempfile::tempdir()?;
             let file_start = dir.path().join("fuzzy");
-            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 2).unwrap();
+            FuzzyMapBuilder::build_from_iter(&file_start, WORDS.iter().cloned(), 2)?;
 
-            unsafe { FuzzyMap::from_path(&file_start).unwrap() }
+            unsafe { FuzzyMap::from_path(&file_start)? }
         };
     }
 
     fn expect(word: &'static str, query: &'static str) -> FuzzyMapLookupResult {
-        FuzzyMapLookupResult { word: word.to_owned(), id: WORDS.binary_search(&word).unwrap() as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
+        FuzzyMapLookupResult { word: word.to_owned(), id: WORDS.binary_search(&word)? as u32, edit_distance: multi_modified_damlev(&word, &[&query])[0] as u8 }
     }
 
     fn get_word(id: u32) -> &'static str {
