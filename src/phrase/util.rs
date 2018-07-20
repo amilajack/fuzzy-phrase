@@ -18,6 +18,7 @@ pub fn three_byte_encode(num: u32) -> WordKey {
     three_bytes
 }
 
+// Do not call this function without either ensuring the vector is long enough, or updating to rm the unwrap call.
 pub fn three_byte_decode(three_bytes: &[u8]) -> u32 {
     let mut padded_byte_vec: Vec<u8> = vec![0u8; 1];
     padded_byte_vec.extend_from_slice(three_bytes);
@@ -174,4 +175,3 @@ mod tests {
     }
 
 }
-

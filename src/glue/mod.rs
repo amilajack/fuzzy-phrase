@@ -117,7 +117,7 @@ impl FuzzyPhraseSetBuilder {
         ).collect::<Option<Vec<_>>>().ok_or("unknown script")?;
         let script_regex = regex::Regex::new(
             &unicode_ranges::get_pattern_for_scripts(&allowed_scripts),
-        ).unwrap();
+        )?;
 
         // words_to_tmpids is a btreemap over word keys,
         // so when we iterate over it, we'll get back words sorted
@@ -220,7 +220,7 @@ impl FuzzyPhraseSet {
         ).collect::<Option<Vec<_>>>().ok_or("unknown script")?;
         let script_regex = regex::Regex::new(
             &unicode_ranges::get_pattern_for_scripts(&allowed_scripts),
-        ).unwrap();
+        )?;
 
         let max_edit_distance = metadata.max_edit_distance;
 
@@ -551,7 +551,7 @@ impl FuzzyPhraseSet {
         // special `Ok(None)` that's chained at the end. Just like when we were in position 2,
         // we'll push the `sq` to `subqueries`.
         for (i, matches) in seq.chain(iter::once(Ok(None))).enumerate() {
-            match matches.unwrap() {
+            match matches? {
                 Some(p) => {
                     sq.word_possibilities.push(p);
                     if sq.word_possibilities.len() == 1 {

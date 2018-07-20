@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use fuzzy::util::multi_modified_damlev_hint;
 
@@ -47,7 +48,7 @@ impl FuzzyMap {
     #[cfg(feature = "mmap")]
     pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FstError> {
         let file_start = path.as_ref();
-        let fst = raw::Fst::from_path(file_start.with_extension("fst")).unwrap();
+        let fst = raw::Fst::from_path(file_start.with_extension("fst"))?;
         let mf_reader = BufReader::new(fs::File::open(file_start.with_extension("msg"))?);
         let id_list: SerializableIdList = Deserialize::deserialize(&mut Deserializer::new(mf_reader)).unwrap();
         Ok(FuzzyMap { id_list: id_list.0, fst: fst })
@@ -198,7 +199,10 @@ impl FuzzyMapBuilder {
             self.builder.insert(key, id)?;
         }
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.with_extension("msg"))?);
-        SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)).unwrap();
+        match SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)) {
+            Err(_e) => return Err(FstError::Io(IoError::new(IoErrorKind::InvalidInput, "File exists and is not a directory"))),
+            Ok(()) => ()
+        };
         self.builder.finish()
     }
 }
