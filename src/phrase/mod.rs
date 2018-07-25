@@ -1,3 +1,4 @@
+
 pub mod util;
 pub mod query;
 
@@ -12,6 +13,8 @@ use fst::raw::{CompiledAddr, Node};
 use self::util::{word_ids_to_key};
 use self::util::PhraseSetError;
 use self::query::{QueryPhrase, QueryWord};
+
+use failure::Error as Error;
 
 #[cfg(test)] mod tests;
 
@@ -36,7 +39,7 @@ impl PhraseSet {
 
     /// Test membership of a single phrase. Returns true iff the phrase matches a complete phrase
     /// in the set. Wraps the underlying Set::contains method.
-    pub fn contains(&self, phrase: QueryPhrase) -> Result<bool, PhraseSetError> {
+    pub fn contains(&self, phrase: QueryPhrase) -> Result<bool, Error> {
         if phrase.has_prefix {
             return Err(PhraseSetError::new("The query submitted has a QueryWord::Prefix. Set::contains only accepts QueryWord:Full"));
         }

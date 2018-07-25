@@ -16,7 +16,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate lazy_static;
 
-pub use failure::Error;
+pub use failure::Error as Error;
 
 mod prefix;
 pub use prefix::PrefixSet;
