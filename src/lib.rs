@@ -4,6 +4,9 @@ extern crate memmap;
 extern crate byteorder;
 extern crate regex;
 
+#[macro_use]
+extern crate failure as failure;
+
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -12,6 +15,8 @@ extern crate serde_json;
 
 #[macro_use]
 extern crate lazy_static;
+
+pub use failure::Error;
 
 mod prefix;
 pub use prefix::PrefixSet;
