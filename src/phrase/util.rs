@@ -1,10 +1,7 @@
-extern crate failure as failure;
-
 use std::io::Cursor;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use std::fmt;
-
-
+use std::error;
 use super::WordKey;
 
 pub fn chop_int(num: u32) -> Vec<u8> {
@@ -66,7 +63,7 @@ impl fmt::Display for PhraseSetError {
         write!(f, "{}", self.details)
     }
 }
-impl Error for PhraseSetError {
+impl error::Error for PhraseSetError {
     fn description(&self) -> &str {
         &self.details
     }

@@ -1,5 +1,3 @@
-extern crate failure as failure;
-
 use std::collections::{BTreeMap, HashMap, hash_map};
 use std::path::{Path, PathBuf};
 use std::error::Error;
@@ -52,12 +50,12 @@ impl Default for FuzzyPhraseSetMetadata {
 }
 
 impl FuzzyPhraseSetBuilder {
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, failure::Error> {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
         let directory = path.as_ref().to_owned();
 
         if directory.exists() {
             if !directory.is_dir() {
-                return Err(format_err!("File exists and is not a directory"));
+                return Err(Box::new(IoError::new(IoErrorKind::AlreadyExists, "File exists and is not a directory")));
             }
         } else {
             fs::create_dir(&directory)?;
