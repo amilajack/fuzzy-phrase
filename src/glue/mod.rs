@@ -313,7 +313,7 @@ impl FuzzyPhraseSet {
 
     #[inline(always)]
     fn get_nonterminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
-        if self.can_fuzzy_match(word) {
+        if edit_distance > 0 && self.can_fuzzy_match(word) {
             let fuzzy_results = self.fuzzy_map.lookup(&word, edit_distance, |id| &self.word_list[id as usize])?;
             if fuzzy_results.len() == 0 {
                 Ok(None)
@@ -343,7 +343,7 @@ impl FuzzyPhraseSet {
             false
         };
 
-        if self.can_fuzzy_match(word) {
+        if edit_distance > 0 && self.can_fuzzy_match(word) {
             let last_fuzzy_results = self.fuzzy_map.lookup(word, edit_distance, |id| &self.word_list[id as usize])?;
             for result in last_fuzzy_results {
                 if found_prefix && result.edit_distance == 0 {
