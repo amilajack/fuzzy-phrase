@@ -46,7 +46,7 @@ fn glue_fuzztest_match() {
     let mut rng = rand::thread_rng();
     for _i in 0..500 {
         let phrase = rng.choose(&PHRASES).unwrap();
-        let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w));
+        let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w) && w.chars().count() > 2);
         let results = SET.fuzzy_match_str(&damaged.as_str(), 1, 1);
 
         assert!(results.is_ok());
@@ -62,7 +62,7 @@ fn glue_fuzztest_match_prefix() {
     let mut rng = rand::thread_rng();
     for _i in 0..500 {
         let phrase = rng.choose(&PHRASES).unwrap();
-        let damaged = get_damaged_prefix(phrase, |w| SET.can_fuzzy_match(w));
+        let damaged = get_damaged_prefix(phrase, |w| SET.can_fuzzy_match(w) && w.chars().count() > 2);
         let results = SET.fuzzy_match_prefix_str(&damaged.as_str(), 1, 1);
 
         assert!(results.is_ok());
@@ -81,7 +81,7 @@ fn glue_fuzztest_windowed_multi_equivalent() {
     let mut augmented_phrases: Vec<String> = Vec::with_capacity(1000);
     for _i in 0..1000 {
         let phrase = rng.choose(&PHRASES).unwrap();
-        let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w));
+        let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w) && w.chars().count() > 2);
         let zip: u32 = rng.gen_range(10000, 99999);
 
         // make a string with the components in random order
@@ -144,7 +144,7 @@ fn glue_fuzztest_windowed_multi_equivalent_prefix() {
     let mut augmented_phrases: Vec<String> = Vec::with_capacity(1000);
     for _i in 0..100 {
         let phrase = rng.choose(&PHRASES).unwrap();
-        let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w));
+        let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w) && w.chars().count() > 2);
         let zip: u32 = rng.gen_range(10000, 99999);
 
         // make a string with the components in random order

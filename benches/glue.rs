@@ -43,7 +43,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         for _i in 0..1000 {
             let phrase = rng.choose(&data.phrases).unwrap();
-            let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w));
+            let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w) && w.chars().count() > 2);
             damaged_phrases.push(damaged);
         }
 
@@ -62,7 +62,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         for _i in 0..1000 {
             let phrase = rng.choose(&data.phrases).unwrap();
-            let damaged = get_damaged_prefix(phrase, |w| data.set.can_fuzzy_match(w));
+            let damaged = get_damaged_prefix(phrase, |w| data.set.can_fuzzy_match(w) && w.chars().count() > 2);
             damaged_phrases.push(damaged);
         }
 
@@ -121,7 +121,7 @@ pub fn benchmark(c: &mut Criterion) {
     let mut augmented_phrases: Vec<String> = Vec::with_capacity(1000);
     for _i in 0..1000 {
         let phrase = rng.choose(&data.phrases).unwrap();
-        let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w));
+        let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w) && w.chars().count() > 2);
         let zip: u32 = rng.gen_range(10000, 99999);
         let augmented = format!(
             "{addr} {city} {state} {zip}",
