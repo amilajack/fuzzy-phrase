@@ -17,6 +17,8 @@ use ::phrase::query::{QueryPhrase, QueryWord};
 use ::fuzzy::{FuzzyMap, FuzzyMapBuilder};
 use regex;
 
+use failure::{Error as FailureError, err_msg};
+
 pub mod unicode_ranges;
 mod util;
 
@@ -50,12 +52,12 @@ impl Default for FuzzyPhraseSetMetadata {
 }
 
 impl FuzzyPhraseSetBuilder {
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, FailureError> {
         let directory = path.as_ref().to_owned();
 
         if directory.exists() {
             if !directory.is_dir() {
-                return Err(Box::new(IoError::new(IoErrorKind::AlreadyExists, "File exists and is not a directory")));
+                return Err(err_msg("File exists and is not a directory"));
             }
         } else {
             fs::create_dir(&directory)?;
@@ -64,7 +66,7 @@ impl FuzzyPhraseSetBuilder {
         Ok(FuzzyPhraseSetBuilder { directory, ..Default::default() })
     }
 
-    pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T]) -> Result<(), Box<Error>> {
+    pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T]) -> Result<(), FailureError> {
         // the strategy here is to take a phrase, look at it word by word, and for any words we've
         // seen before, reuse their temp IDs, otherwise, add new words to our word map and assign them
         // new temp IDs (just autoincrementing in the order we see them) -- later once we've seen all
@@ -89,7 +91,7 @@ impl FuzzyPhraseSetBuilder {
     // convenience method that splits the input string on the space character
     // IT DOES NOT DO PROPER TOKENIZATION; if you need that, use a real tokenizer and call
     // insert directly
-    pub fn insert_str(&mut self, phrase: &str) -> Result<(), Box<Error>> {
+    pub fn insert_str(&mut self, phrase: &str) -> Result<(), FailureError> {
         let phrase_v: Vec<&str> = phrase.split(' ').collect();
         self.insert(&phrase_v)
     }
