@@ -43,7 +43,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         for _i in 0..1000 {
             let phrase = rng.choose(&data.phrases).unwrap();
-            let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w));
+            let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w) && w.chars().count() > 2);
             damaged_phrases.push(damaged);
         }
 
@@ -62,7 +62,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         for _i in 0..1000 {
             let phrase = rng.choose(&data.phrases).unwrap();
-            let damaged = get_damaged_prefix(phrase, |w| data.set.can_fuzzy_match(w));
+            let damaged = get_damaged_prefix(phrase, |w| data.set.can_fuzzy_match(w) && w.chars().count() > 2);
             damaged_phrases.push(damaged);
         }
 
@@ -121,7 +121,7 @@ pub fn benchmark(c: &mut Criterion) {
     let mut augmented_phrases: Vec<String> = Vec::with_capacity(1000);
     for _i in 0..1000 {
         let phrase = rng.choose(&data.phrases).unwrap();
-        let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w));
+        let damaged = get_damaged_phrase(phrase, |w| data.set.can_fuzzy_match(w) && w.chars().count() > 2);
         let zip: u32 = rng.gen_range(10000, 99999);
         let augmented = format!(
             "{addr} {city} {state} {zip}",
@@ -174,6 +174,53 @@ pub fn benchmark(c: &mut Criterion) {
         b.iter(|| {
             let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
             data.set.fuzzy_match_windows(tokens.as_slice(), 1, 1, false).unwrap();
+        });
+    }));
+
+    // these next few will construct some phrases that have fake additional cities/states/zips
+    // to test windowing and multi-lookup tests on
+    let data = shared_data.clone();
+    let mut rng = rand::thread_rng();
+    let mut augmented_exact_phrases: Vec<String> = Vec::with_capacity(1000);
+    for _i in 0..1000 {
+        let phrase = rng.choose(&data.phrases).unwrap();
+        let zip: u32 = rng.gen_range(10000, 99999);
+        let augmented = format!(
+            "{addr} {city} {state} {zip}",
+            addr = phrase,
+            city = rng.choose(&cities).unwrap(),
+            state = rng.choose(&states).unwrap(),
+            zip = zip
+        );
+        augmented_exact_phrases.push(augmented);
+    }
+    let augmented_exact_phrases = Rc::new(augmented_exact_phrases);
+
+    let data = shared_data.clone();
+    let sample = augmented_exact_phrases.clone();
+    to_bench.push(Fun::new("fuzzy_match_complex_multi_exact", move |b: &mut Bencher, _i| {
+        let mut cycle = sample.iter().cycle();
+
+        b.iter(|| {
+            let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
+            let mut variants: Vec<(Vec<&str>, bool)> = Vec::new();
+            for start in 0..tokens.len() {
+                for end in start..tokens.len() {
+                    variants.push((tokens[start..(end + 1)].to_vec(), false));
+                }
+            }
+            data.set.fuzzy_match_multi(variants.as_slice(), 0, 0).unwrap();
+        });
+    }));
+
+    let data = shared_data.clone();
+    let sample = augmented_exact_phrases.clone();
+    to_bench.push(Fun::new("fuzzy_match_complex_windows_exact", move |b: &mut Bencher, _i| {
+        let mut cycle = sample.iter().cycle();
+
+        b.iter(|| {
+            let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
+            data.set.fuzzy_match_windows(tokens.as_slice(), 0, 0, false).unwrap();
         });
     }));
 

@@ -313,7 +313,9 @@ impl FuzzyPhraseSet {
 
     #[inline(always)]
     fn get_nonterminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
-        if self.can_fuzzy_match(word) {
+        // check if we actually want to fuzzy-match, if the word is made of the right kind of characters
+        // and if it's more than one char long
+        if edit_distance > 0 && self.can_fuzzy_match(word) && word.chars().nth(1).is_some() {
             let fuzzy_results = self.fuzzy_map.lookup(&word, edit_distance, |id| &self.word_list[id as usize])?;
             if fuzzy_results.len() == 0 {
                 Ok(None)
@@ -343,7 +345,9 @@ impl FuzzyPhraseSet {
             false
         };
 
-        if self.can_fuzzy_match(word) {
+        // check if we actually want to fuzzy-match, if the word is made of the right kind of characters
+        // and if it's more than one char long
+        if edit_distance > 0 && self.can_fuzzy_match(word) && word.chars().nth(1).is_some() {
             let last_fuzzy_results = self.fuzzy_map.lookup(word, edit_distance, |id| &self.word_list[id as usize])?;
             for result in last_fuzzy_results {
                 if found_prefix && result.edit_distance == 0 {
@@ -986,6 +990,8 @@ mod tests {
             builder.insert_str("St Elizabeth").unwrap();
             builder.insert_str("100 st washington").unwrap();
             builder.insert_str("washington st").unwrap();
+            builder.insert_str("100 d st").unwrap();
+            builder.insert_str("100 e st").unwrap();
             builder.finish().unwrap();
 
             FuzzyPhraseSet::from_path(&DIRECTORY.path()).unwrap()
@@ -1041,6 +1047,36 @@ mod tests {
                 TEST_SET.fuzzy_match(&["100"], 1, 1).unwrap(),
                 TEST_SET.fuzzy_match(&["100", "main"], 1, 1).unwrap(),
                 TEST_SET.fuzzy_match(&["100", "main", "street"], 1, 1).unwrap()
+            ]
+        );
+    }
+
+    #[test]
+    fn one_char_skip() -> () {
+        // confirm that we don't match e when we ask for d because of the one-char rule
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "d", "st"], 1, 1, true).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "d".to_string(), "st".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: true },
+                FuzzyWindowResult { phrase: vec!["St".to_string()], edit_distance: 1, start_position: 2, ends_in_prefix: true }
+            ]
+        );
+
+        // same when it's in the terminal position
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "e"], 1, 1, true).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "e".to_string()], edit_distance: 0, start_position: 0, ends_in_prefix: true },
+            ]
+        );
+
+        // and on multi
+        assert_eq!(
+            TEST_SET.fuzzy_match_multi(&[
+                (vec!["100", "e"], true),
+            ], 1, 1).unwrap(),
+            vec![
+                vec![FuzzyMatchResult { phrase: vec!["100".to_string(), "e".to_string()], edit_distance: 0 }],
             ]
         );
     }
