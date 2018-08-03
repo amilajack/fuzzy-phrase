@@ -200,7 +200,7 @@ impl<'a, 'b> PartialEq<FuzzyMatchResult> for FuzzyWindowResult {
 }
 
 impl FuzzyPhraseSet {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<Error>> {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FailureError> {
         // the path of a fuzzy phrase set is a directory that has all the subcomponents in it at predictable URLs
         // the prefix graph and phrase graph are each single-file FSTs; the fuzzy graph is multiple files so we
         // pass in a their shared prefix to the fuzzy graph constructor
@@ -208,13 +208,15 @@ impl FuzzyPhraseSet {
         let directory = path.as_ref();
 
         if !directory.exists() || !directory.is_dir() {
-            return Err(Box::new(IoError::new(IoErrorKind::NotFound, "File does not exist or is not a directory")));
+            return Err(err_msg("File does not exist or is not a directory"));
+            // return Err(Box::new(IoError::new(IoErrorKind::NotFound, "File does not exist or is not a directory")));
         }
 
         let metadata_reader = BufReader::new(fs::File::open(directory.join(Path::new("metadata.json")))?);
         let metadata: FuzzyPhraseSetMetadata = serde_json::from_reader(metadata_reader)?;
         if metadata != FuzzyPhraseSetMetadata::default() {
-            return Err(Box::new(IoError::new(IoErrorKind::InvalidData, "Unexpected structure metadata")));
+            return Err(err_msg("Unexpected structure metadata"));
+            // return Err(Box::new(IoError::new(IoErrorKind::InvalidData, "Unexpected structure metadata")));
         }
 
         let allowed_scripts = &metadata.fuzzy_enabled_scripts.iter().map(
@@ -228,7 +230,8 @@ impl FuzzyPhraseSet {
 
         let prefix_path = directory.join(Path::new("prefix.fst"));
         if !prefix_path.exists() {
-            return Err(Box::new(IoError::new(IoErrorKind::NotFound, "Prefix FST does not exist")));
+            return Err(err_msg("Prefix FST does not exist"));
+            // return Err(Box::new(IoError::new(IoErrorKind::NotFound, "Prefix FST does not exist")));
         }
         let prefix_set = unsafe { PrefixSet::from_path(&prefix_path) }?;
 
@@ -247,7 +250,8 @@ impl FuzzyPhraseSet {
 
         let phrase_path = directory.join(Path::new("phrase.fst"));
         if !phrase_path.exists() {
-            return Err(Box::new(IoError::new(IoErrorKind::NotFound, "Phrase FST does not exist")));
+            return Err(err_msg("Phrase FST does not exist"));
+            // return Err(Box::new(IoError::new(IoErrorKind::NotFound, "Phrase FST does not exist")));
         }
         let phrase_set = unsafe { PhraseSet::from_path(&phrase_path) }?;
 
