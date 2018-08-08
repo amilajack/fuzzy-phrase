@@ -1,7 +1,6 @@
 use std::io::Cursor;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use std::fmt;
-use std::error;
 use super::WordKey;
 
 pub fn chop_int(num: u32) -> Vec<u8> {
@@ -46,7 +45,7 @@ pub fn key_to_word_ids(key: &[u8]) -> Vec<u32> {
     phrase
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Fail)]
 pub struct PhraseSetError {
     details: String
 }
@@ -63,11 +62,7 @@ impl fmt::Display for PhraseSetError {
         write!(f, "{}", self.details)
     }
 }
-impl error::Error for PhraseSetError {
-    fn description(&self) -> &str {
-        &self.details
-    }
-}
+
 
 #[cfg(test)]
 mod tests {
