@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap, hash_map};
 use std::path::{Path, PathBuf};
-use std::error::Error;
-use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter};
 use std::fs;
 use std::iter;
 use std::cmp::Ord;
@@ -12,7 +11,6 @@ use fst::Streamer;
 
 use ::prefix::{PrefixSet, PrefixSetBuilder};
 use ::phrase::{PhraseSet, PhraseSetBuilder};
-use ::phrase::util::PhraseSetError;
 use ::phrase::query::{QueryPhrase, QueryWord};
 use ::fuzzy::{FuzzyMap, FuzzyMapBuilder};
 use regex;
@@ -96,7 +94,7 @@ impl FuzzyPhraseSetBuilder {
         self.insert(&phrase_v)
     }
 
-    pub fn finish(mut self) -> Result<(), Box<Error>> {
+    pub fn finish(mut self) -> Result<(), FailureError> {
         // in the future we could make some of this setable from the outside
         let metadata = FuzzyPhraseSetMetadata::default();
 
@@ -116,7 +114,7 @@ impl FuzzyPhraseSetBuilder {
         // this is a regex set to decide whether to index somehing for fuzzy matching
         let allowed_scripts = &metadata.fuzzy_enabled_scripts.iter().map(
             |s| unicode_ranges::get_script_by_name(s)
-        ).collect::<Option<Vec<_>>>().ok_or("unknown script")?;
+        ).collect::<Option<Vec<_>>>().ok_or(err_msg("unknown script"))?;
         let script_regex = regex::Regex::new(
             &unicode_ranges::get_pattern_for_scripts(&allowed_scripts),
         )?;
@@ -221,7 +219,7 @@ impl FuzzyPhraseSet {
 
         let allowed_scripts = &metadata.fuzzy_enabled_scripts.iter().map(
             |s| unicode_ranges::get_script_by_name(s)
-        ).collect::<Option<Vec<_>>>().ok_or("unknown script")?;
+        ).collect::<Option<Vec<_>>>().ok_or(err_msg("unknown script"))?;
         let script_regex = regex::Regex::new(
             &unicode_ranges::get_pattern_for_scripts(&allowed_scripts),
         )?;
@@ -267,7 +265,7 @@ impl FuzzyPhraseSet {
         util::can_fuzzy_match(word, &self.script_regex)
     }
 
-    pub fn contains<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, Box<Error>> {
+    pub fn contains<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, FailureError> {
         // strategy: get each word's ID from the prefix graph (or return false if any are missing)
         // and then look up that ID sequence in the phrase graph
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
@@ -283,12 +281,12 @@ impl FuzzyPhraseSet {
     // convenience method that splits the input string on the space character
     // IT DOES NOT DO PROPER TOKENIZATION; if you need that, use a real tokenizer and call
     // contains directly
-    pub fn contains_str(&self, phrase: &str) -> Result<bool, Box<Error>> {
+    pub fn contains_str(&self, phrase: &str) -> Result<bool, FailureError> {
         let phrase_v: Vec<&str> = phrase.split(' ').collect();
         self.contains(&phrase_v)
     }
 
-    pub fn contains_prefix<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, Box<Error>> {
+    pub fn contains_prefix<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, FailureError> {
         // strategy: get each word's ID from the prefix graph (or return false if any are missing)
         // except for the last one; do a word prefix lookup instead and construct a prefix range
         // and then look up that sequence with a prefix lookup in the phrase graph
@@ -312,13 +310,13 @@ impl FuzzyPhraseSet {
     // convenience method that splits the input string on the space character
     // IT DOES NOT DO PROPER TOKENIZATION; if you need that, use a real tokenizer and call
     // contains_prefix directly
-    pub fn contains_prefix_str(&self, phrase: &str) -> Result<bool, Box<Error>> {
+    pub fn contains_prefix_str(&self, phrase: &str) -> Result<bool, FailureError> {
         let phrase_v: Vec<&str> = phrase.split(' ').collect();
         self.contains_prefix(&phrase_v)
     }
 
     #[inline(always)]
-    fn get_nonterminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
+    fn get_nonterminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, FailureError> {
         // check if we actually want to fuzzy-match, if the word is made of the right kind of characters
         // and if it's more than one char long
         if edit_distance > 0 && self.can_fuzzy_match(word) && word.chars().nth(1).is_some() {
@@ -341,7 +339,7 @@ impl FuzzyPhraseSet {
     }
 
     #[inline(always)]
-    fn get_terminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
+    fn get_terminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, FailureError> {
         // last word: try both prefix and, if eligible, fuzzy lookup, and return nothing if both fail
         let mut last_variants: Vec<QueryWord> = Vec::new();
         let found_prefix = if let Some((word_id_start, word_id_end)) = self.prefix_set.get_prefix_range(word) {
@@ -370,7 +368,7 @@ impl FuzzyPhraseSet {
         }
     }
 
-    pub fn fuzzy_match<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+    pub fn fuzzy_match<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, FailureError> {
         // strategy: look up each word in the fuzzy graph
         // and then construct a vector of vectors representing all the word variants that could reside in each slot
         // in the phrase, and then recursively enumerate every combination of variants and look them each up in the phrase graph
@@ -378,11 +376,11 @@ impl FuzzyPhraseSet {
         let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
 
         let edit_distance = if max_word_dist > self.max_edit_distance {
-            return Err(Box::new(PhraseSetError::new(format!(
+            return Err(err_msg(format!(
                 "The maximum configured edit distance for this index is {}; {} requested",
                 self.max_edit_distance,
                 max_word_dist
-            ).as_str())));
+            )));
         } else {
             max_word_dist
         };
@@ -414,12 +412,12 @@ impl FuzzyPhraseSet {
         Ok(results)
     }
 
-    pub fn fuzzy_match_str(&self, phrase: &str, max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+    pub fn fuzzy_match_str(&self, phrase: &str, max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, FailureError> {
         let phrase_v: Vec<&str> = phrase.split(' ').collect();
         self.fuzzy_match(&phrase_v, max_word_dist, max_phrase_dist)
     }
 
-    pub fn fuzzy_match_prefix<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+    pub fn fuzzy_match_prefix<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, FailureError> {
         // strategy: look up each word in the fuzzy graph, and also look up the last one in the prefix graph
         // and then construct a vector of vectors representing all the word variants that could reside in each slot
         // in the phrase, and then recursively enumerate every combination of variants and look them each up in the phrase graph
@@ -431,11 +429,11 @@ impl FuzzyPhraseSet {
         }
 
         let edit_distance = if max_word_dist > self.max_edit_distance {
-            return Err(Box::new(PhraseSetError::new(format!(
+            return Err(err_msg(format!(
                 "The maximum configured edit distance for this index is {}; {} requested",
                 self.max_edit_distance,
                 max_word_dist
-            ).as_str())));
+            )));
         } else {
             max_word_dist
         };
@@ -473,12 +471,12 @@ impl FuzzyPhraseSet {
         Ok(results)
     }
 
-    pub fn fuzzy_match_prefix_str(&self, phrase: &str, max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, Box<Error>> {
+    pub fn fuzzy_match_prefix_str(&self, phrase: &str, max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<FuzzyMatchResult>, FailureError> {
         let phrase_v: Vec<&str> = phrase.split(' ').collect();
         self.fuzzy_match_prefix(&phrase_v, max_word_dist, max_phrase_dist)
     }
 
-    pub fn fuzzy_match_windows<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8, ends_in_prefix: bool) -> Result<Vec<FuzzyWindowResult>, Box<Error>> {
+    pub fn fuzzy_match_windows<T: AsRef<str>>(&self, phrase: &[T], max_word_dist: u8, max_phrase_dist: u8, ends_in_prefix: bool) -> Result<Vec<FuzzyWindowResult>, FailureError> {
         // this is a little different than the regular fuzzy match in that we're considering
         // multiple possible substrings we'll start by trying to fuzzy-match all the words, but
         // some of those will likely fail -- rather than early-returning like in regular fuzzy
@@ -520,17 +518,17 @@ impl FuzzyPhraseSet {
         let mut subqueries: Vec<Subquery> = Vec::new();
 
         let edit_distance = if max_word_dist > self.max_edit_distance {
-            return Err(Box::new(PhraseSetError::new(format!(
+            return Err(err_msg(format!(
                 "The maximum configured edit distance for this index is {}; {} requested",
                 self.max_edit_distance,
                 max_word_dist
-            ).as_str())));
+            )));
         } else {
             max_word_dist
         };
 
         // this block creates an iterator of possible fuzzy matches for each word in phrase
-        let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, Box<Error>>>> = if ends_in_prefix {
+        let seq: Box<Iterator<Item=Result<Option<Vec<QueryWord>>, FailureError>>> = if ends_in_prefix {
             // if the phrase ends in a prefix
             let last_idx = phrase.len() - 1;
             let i = phrase[..last_idx].iter().map(
@@ -625,7 +623,7 @@ impl FuzzyPhraseSet {
         Ok(results)
     }
 
-    pub fn fuzzy_match_multi<T: AsRef<str> + Ord + Debug, U: AsRef<[T]>>(&self, phrases: &[(U, bool)], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<Vec<FuzzyMatchResult>>, Box<Error>> {
+    pub fn fuzzy_match_multi<T: AsRef<str> + Ord + Debug, U: AsRef<[T]>>(&self, phrases: &[(U, bool)], max_word_dist: u8, max_phrase_dist: u8) -> Result<Vec<Vec<FuzzyMatchResult>>, FailureError> {
 
         // This is roughly equivalent to `fuzzy_match_windows` in purpose, but operating under
         // the assumption that the caller will have wanted to make some changes to some of the
@@ -647,11 +645,11 @@ impl FuzzyPhraseSet {
         }
 
         let edit_distance = if max_word_dist > self.max_edit_distance {
-            return Err(Box::new(PhraseSetError::new(format!(
+            return Err(err_msg(format!(
                 "The maximum configured edit distance for this index is {}; {} requested",
                 self.max_edit_distance,
                 max_word_dist
-            ).as_str())));
+            )));
         } else {
             max_word_dist
         };
@@ -754,12 +752,12 @@ impl FuzzyPhraseSet {
             for word in longest_phrase[..(longest_phrase.len() - 1)].iter() {
                 word_possibilities.push(
                     all_words.get(&(word.as_ref(), false))
-                        .ok_or("Can't find corrected word")?.clone()
+                        .ok_or(err_msg("Can't find corrected word"))?.clone()
                 );
             }
             word_possibilities.push(
                 all_words.get(&(longest_phrase[longest_phrase.len() - 1].as_ref(), ends_in_prefix))
-                    .ok_or("Can't find corrected word")?.clone()
+                    .ok_or(err_msg("Can't find corrected word"))?.clone()
             );
 
             let phrase_matches = self.phrase_set.match_combinations_as_windows(
