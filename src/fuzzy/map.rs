@@ -4,16 +4,14 @@ use std::fs;
 use std::cmp::{min, Ordering};
 use itertools::Itertools;
 use fst::raw;
-use fst::Error as FstError;
 #[cfg(feature = "mmap")]
 use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
-use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
-use failure::Error as Error;
+use failure::{Error as FailureError, err_msg};
 
 use fuzzy::util::multi_modified_damlev_hint;
 
@@ -49,7 +47,7 @@ impl PartialOrd for FuzzyMapLookupResult {
 
 impl FuzzyMap {
     #[cfg(feature = "mmap")]
-    pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+    pub unsafe fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, FailureError> {
         let file_start = path.as_ref();
         let fst = raw::Fst::from_path(file_start.with_extension("fst"))?;
         let mf_reader = BufReader::new(fs::File::open(file_start.with_extension("msg"))?);
@@ -103,7 +101,7 @@ impl FuzzyMap {
         }
     }
 
-    pub fn lookup<'a, F>(&self, query: &str, edit_distance: u8, lookup_fn: F) -> Result<Vec<FuzzyMapLookupResult>, Error> where F: Fn(u32) -> &'a str {
+    pub fn lookup<'a, F>(&self, query: &str, edit_distance: u8, lookup_fn: F) -> Result<Vec<FuzzyMapLookupResult>, FailureError> where F: Fn(u32) -> &'a str {
         let mut matches = Vec::<u32>::new();
 
         let mut variant_ids: Vec<u64> = Vec::new();
@@ -157,7 +155,7 @@ pub struct FuzzyMapBuilder {
 }
 
 impl FuzzyMapBuilder {
-    pub fn new<P: AsRef<Path>>(path: P, edit_distance: u8) -> Result<Self, Error> {
+    pub fn new<P: AsRef<Path>>(path: P, edit_distance: u8) -> Result<Self, FailureError> {
         let file_start = path.as_ref().to_owned();
         let fst_wtr = BufWriter::new(fs::File::create(file_start.with_extension("fst"))?);
 
@@ -170,7 +168,7 @@ impl FuzzyMapBuilder {
         })
     }
 
-    pub fn build_from_iter<'a, T, P: AsRef<Path>>(path: P, words: T, edit_distance: u8) -> Result<(), Error> where T: Iterator<Item=&'a str> {
+    pub fn build_from_iter<'a, T, P: AsRef<Path>>(path: P, words: T, edit_distance: u8) -> Result<(), FailureError> where T: Iterator<Item=&'a str> {
         let mut fuzzy_map_builder = FuzzyMapBuilder::new(path, edit_distance)?;
 
         for (i, word) in words.enumerate() {
@@ -188,7 +186,7 @@ impl FuzzyMapBuilder {
         }
     }
 
-    pub fn finish(mut self) -> Result<(), FstError> {
+    pub fn finish(mut self) -> Result<(), FailureError> {
         self.word_variants.sort();
 
         for (key, group) in &(&self.word_variants).iter().dedup().group_by(|t| &t.0) {
@@ -203,10 +201,10 @@ impl FuzzyMapBuilder {
         }
         let mf_wtr = BufWriter::new(fs::File::create(self.file_path.with_extension("msg"))?);
         match SerializableIdList(self.id_builder).serialize(&mut Serializer::new(mf_wtr)) {
-            Err(_e) => return Err(FstError::Io(IoError::new(IoErrorKind::InvalidInput, "File exists and is not a directory"))),
+            Err(_e) => return Err(err_msg("File exists and is not a directory")),
             Ok(()) => ()
         };
-        self.builder.finish()
+        Ok(self.builder.finish()?)
     }
 }
 
