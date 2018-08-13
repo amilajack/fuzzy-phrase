@@ -12,6 +12,7 @@ use fst::raw::{CompiledAddr, Node};
 use self::util::{word_ids_to_key};
 use self::util::PhraseSetError;
 use self::query::{QueryPhrase, QueryWord};
+// use super::errors::PhraseSetError;
 
 #[cfg(test)] mod tests;
 

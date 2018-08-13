@@ -1,7 +1,7 @@
-extern crate failure as failure;
+// #[macro_use]extern crate failure as failure;
 
 use failure::{Error, Fail};
-use super::lib;
+// use super::lib;
 
 #[derive(Debug, Fail)]
 enum PhraseSetError {

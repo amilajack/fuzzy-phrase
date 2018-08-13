@@ -16,6 +16,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
 pub use failure::Error as Error;
 
 mod prefix;
@@ -34,3 +35,5 @@ pub use phrase::query::QueryPhrase;
 pub use phrase::query::QueryWord;
 
 pub mod glue;
+
+pub mod errors;
