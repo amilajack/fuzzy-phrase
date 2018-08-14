@@ -1,17 +1,18 @@
-// #[macro_use]extern crate failure as failure;
+// #[macro_use] extern crate failure as failure;
 
-use failure::{Error, Fail};
+use failure::Error;
 // use super::lib;
 
-#[derive(Debug, Fail)]
+#[derive(Fail, Debug)]
+// #[fail(display = "invalid toolchain name")]
 enum PhraseSetError {
-    #[fail(display = "invalid toolchain name: {}", name)]
+    #[fail(display = "invalid structure metadata: {}", name)]
     InvalidStructureMetadata {
         name: String,
     },
-    #[fail(display = "unknown toolchain version: {}", version)]
+    #[fail(display = "unknown script: {}", script)]
     UnknownScript {
-        name: String,
+        script: String,
     }
 
 
