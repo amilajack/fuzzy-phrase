@@ -4,7 +4,6 @@ use failure::Error;
 // use super::lib;
 
 #[derive(Fail, Debug)]
-// #[fail(display = "invalid toolchain name")]
 enum PhraseSetError {
     #[fail(display = "invalid structure metadata: {}", name)]
     InvalidStructureMetadata {
@@ -13,6 +12,14 @@ enum PhraseSetError {
     #[fail(display = "unknown script: {}", script)]
     UnknownScript {
         script: String,
+    },
+    #[fail(display = "{} file does not exist, or is not a directory", filename)]
+    FileNotFound {
+        filename: String,
+    },
+    #[fail(display = "{} edit distance requested", distance)]
+    EditDistance {
+        distance: i32,
     }
 
 
