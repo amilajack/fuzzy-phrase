@@ -73,14 +73,22 @@ impl FuzzyPhraseSetBuilder {
         Ok(FuzzyPhraseSetBuilder { directory, ..Default::default() })
     }
 
+    fn get_or_create_tmpid(&mut self, word: &String) -> Result<u32, Box<Error>> {
+        let current_len = self.words_to_tmpids.len();
+        let word_id = self.words_to_tmpids.entry(word.to_owned()).or_insert(current_len as u32);
+        Ok(*word_id)
+    }
+
     pub fn load_word_replacements(&mut self, word_pairs: Vec<WordReplacer>) -> Result<(), Box<Error>> {
         for word_pair in word_pairs {
+            let _from_word_id = self.get_or_create_tmpid(&word_pair.from);
+            let _to_word_id = self.get_or_create_tmpid(&word_pair.to);
             self.words_replacements.push(word_pair);
         }
         Ok(())
     }
 
-    pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T], word_pairs: Vec<WordReplacer>) -> Result<(), Box<Error>> {
+    pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T]) -> Result<(), Box<Error>> {
         // the strategy here is to take a phrase, look at it word by word, and for any words we've
         // seen before, reuse their temp IDs, otherwise, add new words to our word map and assign them
         // new temp IDs (just autoincrementing in the order we see them) -- later once we've seen all
@@ -94,8 +102,7 @@ impl FuzzyPhraseSetBuilder {
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
             // but absent https://github.com/rust-lang/rfcs/pull/1769 , avoiding it requires a huge amount of hoop-jumping
             let string_word = word.to_string();
-            let current_len = self.words_to_tmpids.len();
-            let word_id = self.words_to_tmpids.entry(string_word).or_insert(current_len as u32);
+            let word_id = self.get_or_create_tmpid(&string_word)?;
             tmpid_phrase.push(word_id.to_owned());
         }
 
@@ -1099,12 +1106,12 @@ mod tests {
     }
 
     #[test]
-    fn load_word_replacements_test() {
+    fn load_word_replacements_test() -> () {
         let dir = tempfile::tempdir().unwrap();
         let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
 
         let word_list = vec![WordReplacer { from: "Str".to_string(), to: "Street".to_string()}];
-        builder.load_word_replacements(word_list);
+        builder.load_word_replacements(word_list).unwrap();
     }
 
 }
