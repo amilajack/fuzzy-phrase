@@ -20,6 +20,12 @@ use regex;
 pub mod unicode_ranges;
 mod util;
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct WordReplacer {
+    from: String,
+    to: String
+}
+
 #[derive(Default, Debug)]
 pub struct FuzzyPhraseSetBuilder {
     phrases: Vec<Vec<u32>>,
@@ -27,6 +33,7 @@ pub struct FuzzyPhraseSetBuilder {
     // we'll only have one copy of each word, in the vector, so the inverse
     // map will map from a pointer to an int
     words_to_tmpids: BTreeMap<String, u32>,
+    words_replacements: Vec<WordReplacer>,
     directory: PathBuf,
 }
 
@@ -36,6 +43,7 @@ struct FuzzyPhraseSetMetadata {
     format_version: u32,
     fuzzy_enabled_scripts: Vec<String>,
     max_edit_distance: u8,
+    words_replacements: Vec<WordReplacer>
 }
 
 impl Default for FuzzyPhraseSetMetadata {
@@ -45,6 +53,7 @@ impl Default for FuzzyPhraseSetMetadata {
             format_version: 1,
             fuzzy_enabled_scripts: vec!["Latin".to_string(), "Greek".to_string(), "Cyrillic".to_string()],
             max_edit_distance: 1,
+            words_replacements: vec![WordReplacer { from: "Str".to_string(), to: "Street".to_string()}]
         }
     }
 }
@@ -64,7 +73,14 @@ impl FuzzyPhraseSetBuilder {
         Ok(FuzzyPhraseSetBuilder { directory, ..Default::default() })
     }
 
-    pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T]) -> Result<(), Box<Error>> {
+    pub fn load_word_replacements(&mut self, word_pairs: Vec<WordReplacer>) -> Result<(), Box<Error>> {
+        for word_pair in word_pairs {
+            self.words_replacements.push(word_pair);
+        }
+        Ok(())
+    }
+
+    pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T], word_pairs: Vec<WordReplacer>) -> Result<(), Box<Error>> {
         // the strategy here is to take a phrase, look at it word by word, and for any words we've
         // seen before, reuse their temp IDs, otherwise, add new words to our word map and assign them
         // new temp IDs (just autoincrementing in the order we see them) -- later once we've seen all
@@ -82,6 +98,7 @@ impl FuzzyPhraseSetBuilder {
             let word_id = self.words_to_tmpids.entry(string_word).or_insert(current_len as u32);
             tmpid_phrase.push(word_id.to_owned());
         }
+
         self.phrases.push(tmpid_phrase);
         Ok(())
     }
@@ -1080,6 +1097,16 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn load_word_replacements_test() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
+
+        let word_list = vec![WordReplacer { from: "Str".to_string(), to: "Street".to_string()}];
+        builder.load_word_replacements(word_list);
+    }
+
 }
 
 #[cfg(test)] mod fuzz_tests;
