@@ -33,7 +33,7 @@ pub struct FuzzyPhraseSetBuilder {
     // we'll only have one copy of each word, in the vector, so the inverse
     // map will map from a pointer to an int
     words_to_tmpids: BTreeMap<String, u32>,
-    words_replacements: Vec<WordReplacement>,
+    word_replacements: Vec<WordReplacement>,
     directory: PathBuf,
 }
 
@@ -43,7 +43,7 @@ struct FuzzyPhraseSetMetadata {
     format_version: u32,
     fuzzy_enabled_scripts: Vec<String>,
     max_edit_distance: u8,
-    words_replacements: Vec<WordReplacement>
+    word_replacements: Vec<WordReplacement>
 }
 
 impl Default for FuzzyPhraseSetMetadata {
@@ -53,7 +53,7 @@ impl Default for FuzzyPhraseSetMetadata {
             format_version: 1,
             fuzzy_enabled_scripts: vec!["Latin".to_string(), "Greek".to_string(), "Cyrillic".to_string()],
             max_edit_distance: 1,
-            words_replacements: vec![]
+            word_replacements: vec![]
         }
     }
 }
@@ -83,7 +83,7 @@ impl FuzzyPhraseSetBuilder {
         for word_replacement in word_replacements {
             self.get_or_create_tmpid(&word_replacement.from);
             self.get_or_create_tmpid(&word_replacement.to);
-            self.words_replacements.push(word_replacement);
+            self.word_replacements.push(word_replacement);
         }
     }
 
@@ -119,7 +119,7 @@ impl FuzzyPhraseSetBuilder {
 
     pub fn finish(mut self) -> Result<(), Box<Error>> {
         // in the future we could make some of this setable from the outside
-        let metadata = FuzzyPhraseSetMetadata::default();
+        let mut metadata = FuzzyPhraseSetMetadata::default();
 
         // we can go from name -> tmpid
         // we need to go from tmpid -> id
@@ -183,8 +183,9 @@ impl FuzzyPhraseSetBuilder {
 
         phrase_set_builder.finish()?;
 
-        let word_replacement_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("word_replacement.json")))?);
-        serde_json::to_writer_pretty(word_replacement_writer, &self.words_replacements)?;
+        for word_replacement in self.word_replacements {
+            metadata.word_replacements.push(word_replacement);
+        }
 
         let metadata_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("metadata.json")))?);
         serde_json::to_writer_pretty(metadata_writer, &metadata)?;
@@ -850,7 +851,7 @@ mod tests {
         contents.sort();
         assert_eq!(
             contents,
-            vec!["fuzzy.fst", "fuzzy.msg", "metadata.json", "phrase.fst", "prefix.fst", "word_replacement.json"]
+            vec!["fuzzy.fst", "fuzzy.msg", "metadata.json", "phrase.fst", "prefix.fst"]
         );
     }
 
@@ -1116,10 +1117,11 @@ mod tests {
         builder.load_word_replacements(test_word_replacement_list);
         builder.finish().unwrap();
 
-        let word_replacement_reader = BufReader::new(fs::File::open(&dir.path().join(Path::new("word_replacement.json"))).unwrap());
-        let word_replacements: Vec<WordReplacement> = serde_json::from_reader(word_replacement_reader).unwrap();
+        let word_replacement_reader = BufReader::new(fs::File::open(&dir.path().join(Path::new("metadata.json"))).unwrap());
 
-        assert_eq!(word_replacements, [ WordReplacement { from: "Street".to_string(), to: "Str".to_string() }]);
+        let test_word_replacement: FuzzyPhraseSetMetadata = serde_json::from_reader(word_replacement_reader).unwrap();
+
+        assert_eq!(test_word_replacement.word_replacements, [ WordReplacement { from: "Street".to_string(), to: "Str".to_string() }]);
     }
 }
 
