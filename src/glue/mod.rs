@@ -73,10 +73,10 @@ impl FuzzyPhraseSetBuilder {
         Ok(FuzzyPhraseSetBuilder { directory, ..Default::default() })
     }
 
-    fn get_or_create_tmpid(&mut self, word: &String) -> Result<u32, Box<Error>> {
+    fn get_or_create_tmpid(&mut self, word: &str) -> u32 {
         let current_len = self.words_to_tmpids.len();
         let word_id = self.words_to_tmpids.entry(word.to_owned()).or_insert(current_len as u32);
-        Ok(*word_id)
+        *word_id
     }
 
     pub fn load_word_replacements(&mut self, word_replacements: Vec<WordReplacement>) -> Result<(), Box<Error>> {
@@ -102,7 +102,7 @@ impl FuzzyPhraseSetBuilder {
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
             // but absent https://github.com/rust-lang/rfcs/pull/1769 , avoiding it requires a huge amount of hoop-jumping
             let string_word = word.to_string();
-            let word_id = self.get_or_create_tmpid(&string_word)?;
+            let word_id = self.get_or_create_tmpid(&string_word);
             tmpid_phrase.push(word_id.to_owned());
         }
 
