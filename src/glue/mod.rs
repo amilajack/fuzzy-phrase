@@ -20,6 +20,12 @@ use regex;
 pub mod unicode_ranges;
 mod util;
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct WordReplacement {
+    from: String,
+    to: String
+}
+
 #[derive(Default, Debug)]
 pub struct FuzzyPhraseSetBuilder {
     phrases: Vec<Vec<u32>>,
@@ -27,6 +33,7 @@ pub struct FuzzyPhraseSetBuilder {
     // we'll only have one copy of each word, in the vector, so the inverse
     // map will map from a pointer to an int
     words_to_tmpids: BTreeMap<String, u32>,
+    word_replacements: Vec<WordReplacement>,
     directory: PathBuf,
 }
 
@@ -36,6 +43,7 @@ struct FuzzyPhraseSetMetadata {
     format_version: u32,
     fuzzy_enabled_scripts: Vec<String>,
     max_edit_distance: u8,
+    word_replacements: Vec<WordReplacement>
 }
 
 impl Default for FuzzyPhraseSetMetadata {
@@ -45,6 +53,7 @@ impl Default for FuzzyPhraseSetMetadata {
             format_version: 1,
             fuzzy_enabled_scripts: vec!["Latin".to_string(), "Greek".to_string(), "Cyrillic".to_string()],
             max_edit_distance: 1,
+            word_replacements: vec![]
         }
     }
 }
@@ -64,6 +73,20 @@ impl FuzzyPhraseSetBuilder {
         Ok(FuzzyPhraseSetBuilder { directory, ..Default::default() })
     }
 
+    fn get_or_create_tmpid(&mut self, word: &str) -> u32 {
+        let current_len = self.words_to_tmpids.len();
+        let word_id = self.words_to_tmpids.entry(word.to_owned()).or_insert(current_len as u32);
+        *word_id
+    }
+
+    pub fn load_word_replacements(&mut self, word_replacements: Vec<WordReplacement>) -> () {
+        for word_replacement in word_replacements {
+            self.get_or_create_tmpid(&word_replacement.from);
+            self.get_or_create_tmpid(&word_replacement.to);
+            self.word_replacements.push(word_replacement);
+        }
+    }
+
     pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T]) -> Result<(), Box<Error>> {
         // the strategy here is to take a phrase, look at it word by word, and for any words we've
         // seen before, reuse their temp IDs, otherwise, add new words to our word map and assign them
@@ -78,10 +101,10 @@ impl FuzzyPhraseSetBuilder {
             // the fact that this allocation is necessary even if the string is already in the hashmap is a bummer
             // but absent https://github.com/rust-lang/rfcs/pull/1769 , avoiding it requires a huge amount of hoop-jumping
             let string_word = word.to_string();
-            let current_len = self.words_to_tmpids.len();
-            let word_id = self.words_to_tmpids.entry(string_word).or_insert(current_len as u32);
+            let word_id = self.get_or_create_tmpid(&string_word);
             tmpid_phrase.push(word_id.to_owned());
         }
+
         self.phrases.push(tmpid_phrase);
         Ok(())
     }
@@ -96,7 +119,7 @@ impl FuzzyPhraseSetBuilder {
 
     pub fn finish(mut self) -> Result<(), Box<Error>> {
         // in the future we could make some of this setable from the outside
-        let metadata = FuzzyPhraseSetMetadata::default();
+        let mut metadata = FuzzyPhraseSetMetadata::default();
 
         // we can go from name -> tmpid
         // we need to go from tmpid -> id
@@ -159,6 +182,10 @@ impl FuzzyPhraseSetBuilder {
         }
 
         phrase_set_builder.finish()?;
+
+        for word_replacement in self.word_replacements {
+            metadata.word_replacements.push(word_replacement);
+        }
 
         let metadata_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("metadata.json")))?);
         serde_json::to_writer_pretty(metadata_writer, &metadata)?;
@@ -1079,6 +1106,22 @@ mod tests {
                 vec![FuzzyMatchResult { phrase: vec!["100".to_string(), "e".to_string()], edit_distance: 0 }],
             ]
         );
+    }
+
+    #[test]
+    fn load_word_replacements_test() -> () {
+        let dir = tempfile::tempdir().unwrap();
+        let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
+
+        let test_word_replacement_list = vec![WordReplacement { from: "Street".to_string(), to: "Str".to_string()}];
+        builder.load_word_replacements(test_word_replacement_list);
+        builder.finish().unwrap();
+
+        let word_replacement_reader = BufReader::new(fs::File::open(&dir.path().join(Path::new("metadata.json"))).unwrap());
+
+        let test_word_replacement: FuzzyPhraseSetMetadata = serde_json::from_reader(word_replacement_reader).unwrap();
+
+        assert_eq!(test_word_replacement.word_replacements, [ WordReplacement { from: "Street".to_string(), to: "Str".to_string() }]);
     }
 }
 

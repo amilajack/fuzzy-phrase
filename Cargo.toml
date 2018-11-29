@@ -2,6 +2,7 @@
 name = "fuzzy-phrase"
 version = "0.1.0"
 authors = ["Andrew Pendleton <andrew@mapbox.com>"]
+autobenches = false
 
 [dependencies]
 fst = "0.3.0"
