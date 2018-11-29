@@ -53,7 +53,7 @@ impl Default for FuzzyPhraseSetMetadata {
             format_version: 1,
             fuzzy_enabled_scripts: vec!["Latin".to_string(), "Greek".to_string(), "Cyrillic".to_string()],
             max_edit_distance: 1,
-            words_replacements: vec![WordReplacement { from: "Str".to_string(), to: "Street".to_string()}]
+            words_replacements: vec![]
         }
     }
 }
