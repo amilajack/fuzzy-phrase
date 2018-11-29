@@ -183,6 +183,9 @@ impl FuzzyPhraseSetBuilder {
 
         phrase_set_builder.finish()?;
 
+        let word_replacement_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("word_replacement.json")))?);
+        serde_json::to_writer_pretty(word_replacement_writer, &self.words_replacements)?;
+
         let metadata_writer = BufWriter::new(fs::File::create(self.directory.join(Path::new("metadata.json")))?);
         serde_json::to_writer_pretty(metadata_writer, &metadata)?;
 
@@ -847,7 +850,7 @@ mod tests {
         contents.sort();
         assert_eq!(
             contents,
-            vec!["fuzzy.fst", "fuzzy.msg", "metadata.json", "phrase.fst", "prefix.fst"]
+            vec!["fuzzy.fst", "fuzzy.msg", "metadata.json", "phrase.fst", "prefix.fst", "word_replacement.json"]
         );
     }
 
@@ -1109,10 +1112,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
 
-        let word_list = vec![WordReplacement { from: "Str".to_string(), to: "Street".to_string()}];
-        builder.load_word_replacements(word_list);
-    }
+        let test_word_replacement_list = vec![WordReplacement { from: "Street".to_string(), to: "Str".to_string()}];
+        builder.load_word_replacements(test_word_replacement_list);
+        builder.finish().unwrap();
 
+        let word_replacement_reader = BufReader::new(fs::File::open(&dir.path().join(Path::new("word_replacement.json"))).unwrap());
+        let word_replacements: Vec<WordReplacement> = serde_json::from_reader(word_replacement_reader).unwrap();
+
+        assert_eq!(word_replacements, [ WordReplacement { from: "Street".to_string(), to: "Str".to_string() }]);
+    }
 }
 
 #[cfg(test)] mod fuzz_tests;
