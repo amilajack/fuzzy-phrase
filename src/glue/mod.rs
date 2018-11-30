@@ -293,8 +293,8 @@ impl FuzzyPhraseSet {
         // and then look up that ID sequence in the phrase graph
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         for word in phrase {
-            match self.prefix_set.get(word.as_ref()) {
-                Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id as u32, 0)) },
+            match self.prefix_set.lookup(word.as_ref()).id() {
+                Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id.value() as u32, 0)) },
                 None => { return Ok(false) }
             }
         }
@@ -317,12 +317,12 @@ impl FuzzyPhraseSet {
         if phrase.len() > 0 {
             let last_idx = phrase.len() - 1;
             for word in phrase[..last_idx].iter() {
-                match self.prefix_set.get(word.as_ref()) {
-                    Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id as u32, 0)) },
+                match self.prefix_set.lookup(word.as_ref()).id() {
+                    Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id.value() as u32, 0)) },
                     None => { return Ok(false) }
                 }
             }
-            match self.prefix_set.get_prefix_range(phrase[last_idx].as_ref()) {
+            match self.prefix_set.lookup(phrase[last_idx].as_ref()).range() {
                 Some((word_id_start, word_id_end)) => { id_phrase.push(QueryWord::new_prefix((word_id_start.value() as u32, word_id_end.value() as u32))) },
                 None => { return Ok(false) }
             }
@@ -354,8 +354,8 @@ impl FuzzyPhraseSet {
                 Ok(Some(variants))
             }
         } else {
-            match self.prefix_set.get(&word) {
-                Some(word_id) => { Ok(Some(vec![QueryWord::new_full(word_id as u32, 0)])) },
+            match self.prefix_set.lookup(&word).id() {
+                Some(word_id) => { Ok(Some(vec![QueryWord::new_full(word_id.value() as u32, 0)])) },
                 None => { Ok(None) }
             }
         }
@@ -365,7 +365,7 @@ impl FuzzyPhraseSet {
     fn get_terminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
         // last word: try both prefix and, if eligible, fuzzy lookup, and return nothing if both fail
         let mut last_variants: Vec<QueryWord> = Vec::new();
-        let found_prefix = if let Some((word_id_start, word_id_end)) = self.prefix_set.get_prefix_range(word) {
+        let found_prefix = if let Some((word_id_start, word_id_end)) = self.prefix_set.lookup(word).range() {
             last_variants.push(QueryWord::new_prefix((word_id_start.value() as u32, word_id_end.value() as u32)));
             true
         } else {

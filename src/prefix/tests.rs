@@ -11,7 +11,7 @@ lazy_static! {
         include_str!("../../benches/data/phrase_test_cities_ar.txt"),
         include_str!("../../benches/data/phrase_test_cities_ru.txt"),
     ];
-    static ref WORDS: Vec<&'static str> = {
+    static ref WORD_SET: BTreeSet<&'static str> = {
         let mut bts: BTreeSet<&'static str> = BTreeSet::new();
         for data in DATA.iter() {
             let phrases = data.trim().split("\n").collect::<Vec<&str>>();
@@ -22,7 +22,21 @@ lazy_static! {
                 }
             }
         }
-        bts.into_iter().collect()
+        bts
+    };
+    static ref WORDS: Vec<&'static str> = {
+        WORD_SET.iter().cloned().collect()
+    };
+    static ref WORDS_WITH_CONTINUATIONS: BTreeSet<&'static str> = {
+        // take each word in the set, seek to the range that starts with that word,
+        // and filter to only things that start with that word but aren't that word
+        WORD_SET.iter().filter(|&w| {
+            WORD_SET
+                .range((*w)..)
+                .take_while(|p| p.starts_with(w))
+                .filter(|&p| p != w)
+                .count() > 0
+        }).cloned().collect()
     };
     static ref WORDS_WITH_IDS: Vec<(String, u64)> = {
         WORDS.iter().enumerate()
@@ -61,13 +75,23 @@ fn confirm_contents() {
 #[test]
 fn contains() {
     assert!(
-        WORDS.iter().all(|w| SET.contains(w)),
-        "PrefixSet contains all WORDS"
+        WORDS.iter().all(|w| {
+            let lookup = SET.lookup(w);
+            lookup.found() && lookup.found_final()
+        }),
+        "PrefixSet contains all WORDS as prefixes and full words"
     );
 
     assert!(
-        WORDS.iter().all(|w| SET.contains_prefix(w)),
-        "PrefixSet contains all WORDS as prefixes"
+        WORDS.iter().all(|w| {
+            let lookup = SET.lookup(w);
+            if WORDS_WITH_CONTINUATIONS.contains(w) {
+                lookup.has_continuations()
+            } else {
+                !lookup.has_continuations()
+            }
+        }),
+        "PrefixSet's words that should have continuations do, and the ones that shouldn't, don't"
     );
 }
 
@@ -77,9 +101,10 @@ fn contains_prefix() {
         WORDS.iter().all(|w| {
             let char_count = w.chars().count();
             let prefix: String = w.chars().take(char_count - 1).collect();
-            SET.contains_prefix(prefix)
+            let lookup = SET.lookup(prefix);
+            lookup.found() && lookup.has_continuations()
         }),
-        "PrefixSet contains prefixes of all WORDS as prefixes"
+        "PrefixSet contains prefixes of all WORDS as prefixes, and they all have continuations"
     );
 
     assert!(
@@ -96,7 +121,7 @@ fn contains_prefix() {
     );
 
     let co_subset: Vec<(String, u64)> = WORDS_WITH_IDS.iter().filter(|ref t| t.0.starts_with("Co")).cloned().collect();
-    let co_range = SET.get_prefix_range("Co").unwrap();
+    let co_range = SET.lookup("Co").range().unwrap();
     assert_eq!(
         (co_range.0.value(), co_range.1.value()),
         (co_subset[0].1, co_subset.last().unwrap().1),
@@ -109,22 +134,22 @@ fn augmented_contains() {
     let plus_qq: Vec<String> = WORDS.iter().map(|w| w.to_string() + "qq").collect();
 
     assert!(
-        plus_qq.iter().all(|w| !SET.contains(w)),
+        plus_qq.iter().all(|w| !SET.lookup(w).found_final()),
         "PrefixSet contains no WORDS appended with 'qq' at the end"
     );
 
     assert!(
-        plus_qq.iter().all(|w| !SET.contains_prefix(w)),
+        plus_qq.iter().all(|w| !SET.lookup(w).found()),
         "PrefixSet contains no WORDS appended with 'qq' at the end as prefixes"
     );
 
     assert!(
-        plus_qq.iter().all(|w| SET.get(w).is_none()),
+        plus_qq.iter().all(|w| !SET.lookup(w).found()),
         "PrefixSet can't get any WORDS appended with 'qq' at the end"
     );
 
     assert!(
-        plus_qq.iter().all(|w| SET.get_prefix_range(w).is_none()),
+        plus_qq.iter().all(|w| SET.lookup(w).range().is_none()),
         "PrefixSet can't get prefix range of any WORDS appended with 'qq' at the end"
     );
 }

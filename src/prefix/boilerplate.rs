@@ -31,10 +31,6 @@ impl PrefixSet {
         PrefixSet::from_bytes(builder.into_inner()?)
     }
 
-    pub fn contains<K: AsRef<[u8]>>(&self, key: K) -> bool {
-        self.0.contains_key(key)
-    }
-
     pub fn stream(&self) -> Stream {
         Stream::new(self.0.stream())
     }
@@ -45,11 +41,6 @@ impl PrefixSet {
 
     pub fn as_fst(&self) -> &raw::Fst {
         &self.0
-    }
-
-    // this one is from Map
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<u64> {
-        self.0.get(key).map(|output| output.value())
     }
 }
 
