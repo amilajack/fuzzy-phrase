@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, hash_map};
+use std::collections::{BTreeMap, HashMap, HashSet, hash_map};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
@@ -363,14 +363,21 @@ impl FuzzyPhraseSet {
                 Ok(None)
             } else {
                 let mut variants: Vec<QueryWord> = Vec::with_capacity(fuzzy_results.len());
+                let mut found_ids: HashSet<u32> = HashSet::new();
                 for result in fuzzy_results {
-                    variants.push(QueryWord::new_full(result.id, result.edit_distance));
+                    let maybe_replaced = *self.word_replacement_map.get(&result.id).unwrap_or(&result.id);
+                    if found_ids.insert(maybe_replaced) {
+                        variants.push(QueryWord::new_full(maybe_replaced, result.edit_distance));
+                    }
                 }
                 Ok(Some(variants))
             }
         } else {
             match self.prefix_set.lookup(&word).id() {
-                Some(word_id) => { Ok(Some(vec![QueryWord::new_full(word_id.value() as u32, 0)])) },
+                Some(word_id) => {
+                    let id = word_id.value() as u32;
+                    let maybe_replaced = *self.word_replacement_map.get(&id).unwrap_or(&id);
+                    Ok(Some(vec![QueryWord::new_full(maybe_replaced, 0)])) },
                 None => { Ok(None) }
             }
         }
@@ -380,23 +387,48 @@ impl FuzzyPhraseSet {
     fn get_terminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
         // last word: try both prefix and, if eligible, fuzzy lookup, and return nothing if both fail
         let mut last_variants: Vec<QueryWord> = Vec::new();
-        let found_prefix = if let Some((word_id_start, word_id_end)) = self.prefix_set.lookup(word).range() {
-            last_variants.push(QueryWord::new_prefix((word_id_start.value() as u32, word_id_end.value() as u32)));
-            true
-        } else {
-            false
-        };
+
+        let mut found_ids: HashSet<u32> = HashSet::new();
+        // this is a range for which a contains test will always fail; we'll replace it with a real
+        // one if we find it
+        let mut found_range = (1u32, 0u32);
+
+        if let Some((word_id_start, word_id_end)) = self.prefix_set.lookup(word).range() {
+            found_range = (word_id_start.value() as u32, word_id_end.value() as u32);
+            let num_terminations = (found_range.1 - found_range.0 + 1) as usize;
+            let replacements: Vec<u32> = self.word_replacement_map
+                .range(found_range.0..=found_range.1)
+                // don't bother emitting a replacement if it would be covered by the prefix anyway
+                .filter_map(|(_key, &target)|
+                    if target < found_range.0 || target > found_range.1 {
+                        Some(target)
+                    } else {
+                        None
+                    }
+                ).collect();
+
+            // if everything within our range will get token-replaced, don't emit the range
+            if num_terminations != replacements.len() {
+                last_variants.push(QueryWord::new_prefix((found_range.0, found_range.1)));
+            }
+            for replacement in replacements {
+                if found_ids.insert(replacement) {
+                    last_variants.push(QueryWord::new_full(replacement, 0));
+                }
+            }
+        }
 
         // check if we actually want to fuzzy-match, if the word is made of the right kind of characters
         // and if it's more than one char long
         if edit_distance > 0 && self.can_fuzzy_match(word) && word.chars().nth(1).is_some() {
             let last_fuzzy_results = self.fuzzy_map.lookup(word, edit_distance, |id| &self.word_list[id as usize])?;
             for result in last_fuzzy_results {
-                if found_prefix && result.edit_distance == 0 {
-                    // if we found a prefix match, a full-word exact match is duplicative
-                    continue;
+                let id = *self.word_replacement_map.get(&result.id).unwrap_or(&result.id);
+                // skip adding this entry if it's in an already-identified range, or is a token
+                // replacement result; otherwise insert it into the set and push it to the output list
+                if !(id >= found_range.0 && id <= found_range.1) && found_ids.insert(id) {
+                    last_variants.push(QueryWord::new_full(id, result.edit_distance));
                 }
-                last_variants.push(QueryWord::new_full(result.id, result.edit_distance));
             }
         }
         if last_variants.len() > 0 {
