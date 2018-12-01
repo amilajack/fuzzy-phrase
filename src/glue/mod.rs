@@ -199,6 +199,7 @@ pub struct FuzzyPhraseSet {
     phrase_set: PhraseSet,
     fuzzy_map: FuzzyMap,
     word_list: Vec<String>,
+    word_replacement_map: BTreeMap<u32, u32>,
     script_regex: regex::Regex,
     max_edit_distance: u8,
 }
@@ -279,8 +280,22 @@ impl FuzzyPhraseSet {
         let fuzzy_path = directory.join(Path::new("fuzzy"));
         let fuzzy_map = unsafe { FuzzyMap::from_path(&fuzzy_path) }?;
 
+        // the word replacements in the metadata are string to string, but we want ID to ID for
+        // the sake of speed, so use the prefix map to go from the former to the latter and put
+        // put them in a btree
+        let mut word_replacement_map: BTreeMap<u32, u32> = BTreeMap::new();
+        for word_replacement in &metadata.word_replacements {
+            let from = prefix_set.lookup(&word_replacement.from).id()
+                .ok_or_else(|| format!("Substitution from-word {} not in lexicon", word_replacement.from))?
+                .value() as u32;
+            let to = prefix_set.lookup(&word_replacement.to).id()
+                .ok_or_else(|| format!("Substitution to-word {} not in lexicon", word_replacement.to))?
+                .value() as u32;
+            word_replacement_map.insert(from, to);
+        }
+
         Ok(FuzzyPhraseSet {
-            prefix_set, phrase_set, fuzzy_map, word_list, script_regex, max_edit_distance
+            prefix_set, phrase_set, fuzzy_map, word_list, word_replacement_map, script_regex, max_edit_distance
         })
     }
 
