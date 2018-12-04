@@ -79,12 +79,13 @@ impl FuzzyPhraseSetBuilder {
         *word_id
     }
 
-    pub fn load_word_replacements(&mut self, word_replacements: Vec<WordReplacement>) -> () {
+    pub fn load_word_replacements(&mut self, word_replacements: Vec<WordReplacement>) -> Result<(), Box<Error>> {
         for word_replacement in word_replacements {
             self.get_or_create_tmpid(&word_replacement.from);
             self.get_or_create_tmpid(&word_replacement.to);
             self.word_replacements.push(word_replacement);
         }
+        Ok(())
     }
 
     pub fn insert<T: AsRef<str>>(&mut self, phrase: &[T]) -> Result<(), Box<Error>> {
