@@ -220,7 +220,7 @@ pub struct FuzzyWindowResult {
 
 impl<'a, 'b> PartialEq<FuzzyMatchResult> for FuzzyWindowResult {
     fn eq(&self, other: &FuzzyMatchResult) -> bool {
-        self.edit_distance == other.edit_distance;
+        self.edit_distance == other.edit_distance &&
         self.phrase == other.phrase
     }
 }
