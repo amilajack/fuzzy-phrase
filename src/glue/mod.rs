@@ -165,6 +165,12 @@ impl FuzzyPhraseSetBuilder {
         prefix_set_builder.finish()?;
         fuzzy_map_builder.finish()?;
 
+        // for token-replacement words, we want to map the temporary ID to the final ID of the
+        // replacement target, rather than of the replacement source, so number those again
+        for replacement in &self.word_replacements {
+            tmpids_to_ids[self.words_to_tmpids[&replacement.from] as usize] = tmpids_to_ids[self.words_to_tmpids[&replacement.to] as usize];
+        }
+
         // next, renumber all of the current phrases with real rather than temp IDs
         for phrase in self.phrases.iter_mut() {
             for word_idx in (*phrase).iter_mut() {
