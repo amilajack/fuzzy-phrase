@@ -20,7 +20,7 @@ use regex;
 pub mod unicode_ranges;
 mod util;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct WordReplacement {
     from: String,
     to: String
@@ -239,7 +239,8 @@ impl FuzzyPhraseSet {
 
         let metadata_reader = BufReader::new(fs::File::open(directory.join(Path::new("metadata.json")))?);
         let metadata: FuzzyPhraseSetMetadata = serde_json::from_reader(metadata_reader)?;
-        if metadata != FuzzyPhraseSetMetadata::default() {
+        let default = FuzzyPhraseSetMetadata::default();
+        if metadata.index_type != default.index_type || metadata.format_version != default.format_version {
             return Err(Box::new(IoError::new(IoErrorKind::InvalidData, "Unexpected structure metadata")));
         }
 
@@ -393,7 +394,8 @@ impl FuzzyPhraseSet {
         // one if we find it
         let mut found_range = (1u32, 0u32);
 
-        if let Some((word_id_start, word_id_end)) = self.prefix_set.lookup(word).range() {
+        let lookup = self.prefix_set.lookup(word);
+        if let Some((word_id_start, word_id_end)) = lookup.range() {
             found_range = (word_id_start.value() as u32, word_id_end.value() as u32);
             let num_terminations = (found_range.1 - found_range.0 + 1) as usize;
             let replacements: Vec<u32> = self.word_replacement_map
@@ -407,9 +409,14 @@ impl FuzzyPhraseSet {
                     }
                 ).collect();
 
-            // if everything within our range will get token-replaced, don't emit the range
+            // if everything within our range will get token-replaced, don't emit the unreplaced word
             if num_terminations != replacements.len() {
-                last_variants.push(QueryWord::new_prefix((found_range.0, found_range.1)));
+                // if there's just one word and it's final, emit a full_word
+                if lookup.has_continuations() {
+                    last_variants.push(QueryWord::new_prefix((found_range.0, found_range.1)));
+                } else {
+                    last_variants.push(QueryWord::new_full(found_range.0, 0));
+                }
             }
             for replacement in replacements {
                 if found_ids.insert(replacement) {
@@ -868,7 +875,7 @@ impl FuzzyPhraseSet {
 }
 
 #[cfg(test)]
-mod tests {
+mod basic_tests {
     extern crate tempfile;
     extern crate lazy_static;
 
@@ -1154,22 +1161,7 @@ mod tests {
             ]
         );
     }
-
-    #[test]
-    fn load_word_replacements_test() -> () {
-        let dir = tempfile::tempdir().unwrap();
-        let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
-
-        let test_word_replacement_list = vec![WordReplacement { from: "Street".to_string(), to: "Str".to_string()}];
-        builder.load_word_replacements(test_word_replacement_list);
-        builder.finish().unwrap();
-
-        let word_replacement_reader = BufReader::new(fs::File::open(&dir.path().join(Path::new("metadata.json"))).unwrap());
-
-        let test_word_replacement: FuzzyPhraseSetMetadata = serde_json::from_reader(word_replacement_reader).unwrap();
-
-        assert_eq!(test_word_replacement.word_replacements, [ WordReplacement { from: "Street".to_string(), to: "Str".to_string() }]);
-    }
 }
 
+#[cfg(test)] mod replacement_tests;
 #[cfg(test)] mod fuzz_tests;
