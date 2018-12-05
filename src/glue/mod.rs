@@ -310,7 +310,11 @@ impl FuzzyPhraseSet {
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         for word in phrase {
             match self.prefix_set.lookup(word.as_ref()).id() {
-                Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id.value() as u32, 0)) },
+                Some(word_id) => {
+                    let id = word_id.value() as u32;
+                    let maybe_replaced = *self.word_replacement_map.get(&id).unwrap_or(&id);
+                    id_phrase.push(QueryWord::new_full(maybe_replaced, 0))
+                },
                 None => { return Ok(false) }
             }
         }
@@ -326,24 +330,34 @@ impl FuzzyPhraseSet {
     }
 
     pub fn contains_prefix<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, Box<Error>> {
-        // strategy: get each word's ID from the prefix graph (or return false if any are missing)
-        // except for the last one; do a word prefix lookup instead and construct a prefix range
-        // and then look up that sequence with a prefix lookup in the phrase graph
-        let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
-        if phrase.len() > 0 {
-            let last_idx = phrase.len() - 1;
-            for word in phrase[..last_idx].iter() {
-                match self.prefix_set.lookup(word.as_ref()).id() {
-                    Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id.value() as u32, 0)) },
-                    None => { return Ok(false) }
-                }
-            }
-            match self.prefix_set.lookup(phrase[last_idx].as_ref()).range() {
-                Some((word_id_start, word_id_end)) => { id_phrase.push(QueryWord::new_prefix((word_id_start.value() as u32, word_id_end.value() as u32))) },
+        // strategy: because of token replacement, the terminal word might have more than one
+        // possible word ID if the prefix range contains replaceable words; as such, rather
+        // than using PhraseSet's contains operation, we'll use the multi-path combination
+        // matcher as we do with fuzzy_match_prefix, but with a much-constrained search set
+        let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
+
+        if phrase.len() == 0 {
+            return Ok(false);
+        }
+
+        let last_idx = phrase.len() - 1;
+        for word in phrase[..last_idx].iter() {
+            match self.prefix_set.lookup(word.as_ref()).id() {
+                Some(word_id) => {
+                    let id = word_id.value() as u32;
+                    let maybe_replaced = *self.word_replacement_map.get(&id).unwrap_or(&id);
+                    word_possibilities.push(vec![QueryWord::new_full(maybe_replaced, 0)])
+                },
                 None => { return Ok(false) }
             }
         }
-        Ok(self.phrase_set.contains_prefix(QueryPhrase::new(&id_phrase)?)?)
+        match self.get_terminal_word_possibilities(phrase[last_idx].as_ref(), 0)? {
+            Some(possibilities) => word_possibilities.push(possibilities),
+            None => return Ok(false),
+        }
+
+        let phrase_matches = self.phrase_set.match_combinations_as_prefixes(&word_possibilities, 0)?;
+        Ok(phrase_matches.len() > 0)
     }
 
     // convenience method that splits the input string on the space character

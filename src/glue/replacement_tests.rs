@@ -188,6 +188,44 @@ fn get_terminal_word_possibilities() -> () {
 }
 
 #[test]
+fn contains() {
+    assert_eq!(
+        TEST_SET.contains_str("100 ft wayne rd").unwrap(),
+        true
+    );
+
+    assert_eq!(
+        TEST_SET.contains_str("100 fort wayne road").unwrap(),
+        true
+    );
+}
+
+#[test]
+fn contains_prefix() {
+    for variant in vec![
+        "100 fort wayne road",
+        "100 ft wayne road",
+        "100 fort wayne roa",
+        "100 ft wayne roa",
+        "100 fort wayne rd",
+        "100 ft wayne rd",
+        "100 fort wayne r",
+        "100 ft wayne r",
+        "100 for",
+        "100 f"
+    ] {
+        assert_eq!(
+            TEST_SET.contains_prefix_str(variant).unwrap(),
+            true
+        );
+    }
+    assert_eq!(
+        TEST_SET.contains_prefix_str("100 q").unwrap(),
+        false
+    );
+}
+
+#[test]
 fn fuzzy_match() {
     // match nothing -- the only way to get from s to st without prefixes is fuzzy matching,
     // and we don't fuzzy-match one-char words
