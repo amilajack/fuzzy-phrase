@@ -11,11 +11,15 @@ pub fn benchmark(c: &mut Criterion) {
     // and a built prefix set, so define a struct to contain them
     struct BenchData {
         phrases: Vec<String>,
-        set: FuzzyPhraseSet
+        set: FuzzyPhraseSet,
+        set_with_replacements: FuzzyPhraseSet
     };
 
     let dir = tempfile::tempdir().unwrap();
+    let resp_dir = tempfile::tempdir().unwrap();
+
     let phrases = get_data("phrase", "us", "en", "latn", true);
+
     let set: FuzzyPhraseSet = {
         let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
         for phrase in phrases.iter() {
@@ -26,8 +30,31 @@ pub fn benchmark(c: &mut Criterion) {
         FuzzyPhraseSet::from_path(&dir.path()).unwrap()
     };
 
+    let set_with_replacements: FuzzyPhraseSet = {
+        let abbrev_data = reqwest::get(
+            "https://raw.githubusercontent.com/mapbox/geocoder-abbreviations/317eafe4/tokens/en.json"
+        ).expect("tried to download data").text().expect("tried to decode the data");
+        let abbrevs: Vec<Vec<String>> = serde_json::from_str(&abbrev_data).expect("tried to parse JSON");
+        let mut replacements: Vec<WordReplacement> = Vec::new();
+
+        for group in abbrevs {
+            for from in group[1..].iter() {
+                replacements.push(WordReplacement { from: from.to_owned(), to: group[0].to_owned() });
+            }
+        }
+
+        let mut builder = FuzzyPhraseSetBuilder::new(&resp_dir.path()).unwrap();
+        builder.load_word_replacements(replacements);
+        for phrase in phrases.iter() {
+            builder.insert_str(phrase).unwrap();
+        }
+        builder.finish().unwrap();
+
+        FuzzyPhraseSet::from_path(&resp_dir.path()).unwrap()
+    };
+
     // move the prebuilt data into a reference-counted struct
-    let shared_data = Rc::new(BenchData { phrases, set });
+    let shared_data = Rc::new(BenchData { phrases, set, set_with_replacements });
     // make a vector I'm going to fill with closures to bench-test
     let mut to_bench = Vec::new();
 
@@ -70,6 +97,23 @@ pub fn benchmark(c: &mut Criterion) {
         // the closure based to b.iter is the thing that will actually be timed; everything before
         // that is untimed per-benchmark setup
         b.iter(|| data.set.fuzzy_match_prefix_str(cycle.next().unwrap(), 1, 1));
+    }));
+
+    let data = shared_data.clone();
+    to_bench.push(Fun::new("fuzzy_match_prefix_success_w_replacements", move |b: &mut Bencher, _i| {
+        let mut damaged_phrases: Vec<String> = Vec::with_capacity(1000);
+        let mut rng = rand::thread_rng();
+
+        for _i in 0..1000 {
+            let phrase = rng.choose(&data.phrases).unwrap();
+            let damaged = get_damaged_prefix(phrase, |w| data.set.can_fuzzy_match(w) && w.chars().count() > 2);
+            damaged_phrases.push(damaged);
+        }
+
+        let mut cycle = damaged_phrases.iter().cycle();
+        // the closure based to b.iter is the thing that will actually be timed; everything before
+        // that is untimed per-benchmark setup
+        b.iter(|| data.set_with_replacements.fuzzy_match_prefix_str(cycle.next().unwrap(), 1, 1));
     }));
 
     let data = shared_data.clone();

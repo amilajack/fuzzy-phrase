@@ -22,8 +22,8 @@ mod util;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct WordReplacement {
-    from: String,
-    to: String
+    pub from: String,
+    pub to: String
 }
 
 #[derive(Default, Debug)]
