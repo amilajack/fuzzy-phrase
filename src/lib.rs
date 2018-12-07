@@ -3,6 +3,7 @@ extern crate itertools;
 extern crate memmap;
 extern crate byteorder;
 extern crate regex;
+extern crate rustc_hash;
 
 extern crate serde;
 #[macro_use]
