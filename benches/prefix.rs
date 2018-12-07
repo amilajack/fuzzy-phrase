@@ -38,7 +38,7 @@ pub fn benchmark(c: &mut Criterion) {
         let mut cycle = data.words.iter().cycle();
         // the closure based to b.iter is the thing that will actually be timed; everything before
         // that is untimed per-benchmark setup
-        b.iter(|| data.prefix_set.contains(cycle.next().unwrap()));
+        b.iter(|| data.prefix_set.lookup(cycle.next().unwrap()).found_final());
     }));
 
     // data is shadowed here for ease of copying and pasting, but this is a new clone
@@ -46,19 +46,19 @@ pub fn benchmark(c: &mut Criterion) {
     let data = shared_data.clone();
     to_bench.push(Fun::new("exact_contains_prefix", move |b: &mut Bencher, _i| {
         let mut cycle = data.words.iter().cycle();
-        b.iter(|| data.prefix_set.contains_prefix(cycle.next().unwrap()));
+        b.iter(|| data.prefix_set.lookup(cycle.next().unwrap()).found());
     }));
 
     let data = shared_data.clone();
     to_bench.push(Fun::new("exact_get", move |b: &mut Bencher, _i| {
         let mut cycle = data.words.iter().cycle();
-        b.iter(|| data.prefix_set.get(cycle.next().unwrap()));
+        b.iter(|| data.prefix_set.lookup(cycle.next().unwrap()).id());
     }));
 
     let data = shared_data.clone();
     to_bench.push(Fun::new("exact_get_prefix_range", move |b: &mut Bencher, _i| {
         let mut cycle = data.words.iter().cycle();
-        b.iter(|| data.prefix_set.get_prefix_range(cycle.next().unwrap()));
+        b.iter(|| data.prefix_set.lookup(cycle.next().unwrap()).range());
     }));
 
     let data = shared_data.clone();
@@ -71,7 +71,7 @@ pub fn benchmark(c: &mut Criterion) {
             w.chars().take(char_count - 1).collect()
         }).collect::<Vec<String>>();
         let mut cycle = prefixes.iter().cycle();
-        b.iter(|| data.prefix_set.contains_prefix(cycle.next().unwrap()));
+        b.iter(|| data.prefix_set.lookup(cycle.next().unwrap()).found());
     }));
 
     let data = shared_data.clone();
@@ -81,7 +81,7 @@ pub fn benchmark(c: &mut Criterion) {
             w.chars().take(if char_count < 2 { char_count } else { 2 }).collect()
         }).dedup().collect::<Vec<String>>();
         let mut cycle = prefixes.iter().cycle();
-        b.iter(|| data.prefix_set.get_prefix_range(cycle.next().unwrap()));
+        b.iter(|| data.prefix_set.lookup(cycle.next().unwrap()).range());
     }));
 
     let data = shared_data.clone();
