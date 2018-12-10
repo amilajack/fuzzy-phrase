@@ -47,7 +47,7 @@ fn glue_fuzztest_match() {
     for _i in 0..500 {
         let phrase = rng.choose(&PHRASES).unwrap();
         let damaged = get_damaged_phrase(phrase, |w| SET.can_fuzzy_match(w) && w.chars().count() > 2);
-        let results = SET.fuzzy_match_str(&damaged.as_str(), 1, 1);
+        let results = SET.fuzzy_match_str(&damaged.as_str(), 1, 1, EndingType::NonPrefix);
 
         assert!(results.is_ok());
         if let Ok(res) = results {
@@ -63,7 +63,7 @@ fn glue_fuzztest_match_prefix() {
     for _i in 0..500 {
         let phrase = rng.choose(&PHRASES).unwrap();
         let damaged = get_damaged_prefix(phrase, |w| SET.can_fuzzy_match(w) && w.chars().count() > 2);
-        let results = SET.fuzzy_match_prefix_str(&damaged.as_str(), 1, 1);
+        let results = SET.fuzzy_match_str(&damaged.as_str(), 1, 1, EndingType::AnyPrefix);
 
         assert!(results.is_ok());
         if let Ok(res) = results {
@@ -98,15 +98,15 @@ fn glue_fuzztest_windowed_multi_equivalent() {
 
     for phrase in augmented_phrases.iter() {
         let tokens: Vec<_> = phrase.split(" ").collect();
-        let mut variants: Vec<(Vec<&str>, bool)> = Vec::new();
+        let mut variants: Vec<(Vec<&str>, EndingType)> = Vec::new();
         let mut variant_starts: Vec<usize> = Vec::new();
         for start in 0..tokens.len() {
             for end in start..tokens.len() {
-                variants.push((tokens[start..(end + 1)].to_vec(), false));
+                variants.push((tokens[start..(end + 1)].to_vec(), EndingType::NonPrefix));
                 variant_starts.push(start);
             }
         }
-        let individual_match_result = variants.iter().map(|v| SET.fuzzy_match(v.0.as_slice(), 1, 1).unwrap()).collect::<Vec<_>>();
+        let individual_match_result = variants.iter().map(|v| SET.fuzzy_match(v.0.as_slice(), 1, 1, EndingType::NonPrefix).unwrap()).collect::<Vec<_>>();
         let multi_match_result = SET.fuzzy_match_multi(variants.as_slice(), 1, 1).unwrap();
 
         // check if the multi match results and the one-by-one match results are identical
@@ -115,7 +115,7 @@ fn glue_fuzztest_windowed_multi_equivalent() {
         // to make sure the windowed match and multi windowed match give the same results, we need
         // to reformat the multi-match results to look like windowed match results based on the
         // start position and length of each variant
-        let mut windowed_match_result = SET.fuzzy_match_windows(tokens.as_slice(), 1, 1, false).unwrap();
+        let mut windowed_match_result = SET.fuzzy_match_windows(tokens.as_slice(), 1, 1, EndingType::NonPrefix).unwrap();
         let mut emulated_windowed_match_result: Vec<FuzzyWindowResult> = Vec::new();
         for i in 0..multi_match_result.len() {
             for result in &multi_match_result[i] {
@@ -123,7 +123,7 @@ fn glue_fuzztest_windowed_multi_equivalent() {
                     phrase: result.phrase.clone(),
                     edit_distance: result.edit_distance,
                     start_position: variant_starts[i],
-                    ends_in_prefix: false
+                    ending_type: EndingType::NonPrefix
                 });
             }
         }
@@ -161,22 +161,22 @@ fn glue_fuzztest_windowed_multi_equivalent_prefix() {
 
     for phrase in augmented_phrases.iter() {
         let tokens: Vec<_> = phrase.split(" ").collect();
-        let mut variants: Vec<(Vec<&str>, bool)> = Vec::new();
+        let mut variants: Vec<(Vec<&str>, EndingType)> = Vec::new();
         let mut variant_starts: Vec<usize> = Vec::new();
-        let mut variant_eip: Vec<bool> = Vec::new();
         for start in 0..tokens.len() {
             for end in start..tokens.len() {
-                let ends_in_prefix = end + 1 == tokens.len();
-                variants.push((tokens[start..(end + 1)].to_vec(), ends_in_prefix));
+                let ending_type = if end + 1 == tokens.len() {
+                    EndingType::AnyPrefix
+                } else {
+                    EndingType::NonPrefix
+                };
+                variants.push((tokens[start..(end + 1)].to_vec(), ending_type));
                 variant_starts.push(start);
-                variant_eip.push(ends_in_prefix);
             }
         }
-        let individual_match_result = variants.iter().map(|v| if v.1 {
-            SET.fuzzy_match_prefix(v.0.as_slice(), 1, 1).unwrap()
-        } else {
-            SET.fuzzy_match(v.0.as_slice(), 1, 1).unwrap()
-        }).collect::<Vec<_>>();
+        let individual_match_result = variants.iter().map(
+            |v| SET.fuzzy_match(v.0.as_slice(), 1, 1, v.1).unwrap()
+        ).collect::<Vec<_>>();
         let multi_match_result = SET.fuzzy_match_multi(variants.as_slice(), 1, 1).unwrap();
 
         // check if the multi match results and the one-by-one match results are identical
@@ -185,7 +185,7 @@ fn glue_fuzztest_windowed_multi_equivalent_prefix() {
         // to make sure the windowed match and multi windowed match give the same results, we need
         // to reformat the multi-match results to look like windowed match results based on the
         // start position and length of each variant
-        let mut windowed_match_result = SET.fuzzy_match_windows(tokens.as_slice(), 1, 1, true).unwrap();
+        let mut windowed_match_result = SET.fuzzy_match_windows(tokens.as_slice(), 1, 1, EndingType::AnyPrefix).unwrap();
         let mut emulated_windowed_match_result: Vec<FuzzyWindowResult> = Vec::new();
         for i in 0..multi_match_result.len() {
             for result in &multi_match_result[i] {
@@ -193,7 +193,7 @@ fn glue_fuzztest_windowed_multi_equivalent_prefix() {
                     phrase: result.phrase.clone(),
                     edit_distance: result.edit_distance,
                     start_position: variant_starts[i],
-                    ends_in_prefix: variant_eip[i]
+                    ending_type: result.ending_type,
                 });
             }
         }
