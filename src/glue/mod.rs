@@ -1161,7 +1161,9 @@ mod basic_tests {
                 (vec!["100"], EndingType::NonPrefix),
                 (vec!["100", "main"], EndingType::NonPrefix),
                 (vec!["100", "main", "stre"], EndingType::AnyPrefix),
+                (vec!["100", "main", "stre"], EndingType::WordBoundaryPrefix),
                 (vec!["100", "main", "street"], EndingType::AnyPrefix),
+                (vec!["100", "main", "street"], EndingType::WordBoundaryPrefix),
                 (vec!["300"], EndingType::NonPrefix),
                 (vec!["300", "mlk"], EndingType::NonPrefix),
                 (vec!["300", "mlk", "blvd"], EndingType::AnyPrefix),
@@ -1170,6 +1172,8 @@ mod basic_tests {
                 vec![],
                 vec![],
                 vec![FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "stre".to_string()], edit_distance: 0, ending_type: EndingType::AnyPrefix }],
+                vec![],
+                vec![FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0, ending_type: EndingType::WordBoundaryPrefix }],
                 vec![FuzzyMatchResult { phrase: vec!["100".to_string(), "main".to_string(), "street".to_string()], edit_distance: 0, ending_type: EndingType::WordBoundaryPrefix }],
                 vec![],
                 vec![],
@@ -1231,6 +1235,16 @@ mod basic_tests {
                 FuzzyWindowResult { phrase: vec!["St".to_string()], edit_distance: 1, start_position: 2, ending_type: EndingType::WordBoundaryPrefix }
             ]
         );
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "s"], 1, 1, EndingType::AnyPrefix).unwrap(),
+            vec![
+                FuzzyWindowResult { phrase: vec!["100".to_string(), "main".to_string(), "s".to_string()], edit_distance: 0, start_position: 0, ending_type: EndingType::AnyPrefix },
+            ]
+        );
+        assert_eq!(
+            TEST_SET.fuzzy_match_windows(&["100", "main", "s"], 1, 1, EndingType::WordBoundaryPrefix).unwrap(),
+            empty_struct
+        );
     }
 
     #[test]
@@ -1239,12 +1253,22 @@ mod basic_tests {
             TEST_SET.fuzzy_match_multi(&[
                 (vec!["100"], EndingType::NonPrefix),
                 (vec!["100", "main"], EndingType::NonPrefix),
-                (vec!["100", "main", "street"], EndingType::AnyPrefix)
+                (vec!["100", "main"], EndingType::WordBoundaryPrefix),
+                (vec!["100", "main", "stre"], EndingType::NonPrefix),
+                (vec!["100", "main", "stre"], EndingType::WordBoundaryPrefix),
+                (vec!["100", "main", "stre"], EndingType::AnyPrefix),
+                (vec!["100", "main", "street"], EndingType::WordBoundaryPrefix),
+                (vec!["100", "main", "street"], EndingType::AnyPrefix),
             ], 1, 1).unwrap(),
             vec![
                 TEST_SET.fuzzy_match(&["100"], 1, 1, EndingType::NonPrefix).unwrap(),
                 TEST_SET.fuzzy_match(&["100", "main"], 1, 1, EndingType::NonPrefix).unwrap(),
-                TEST_SET.fuzzy_match(&["100", "main", "street"], 1, 1, EndingType::AnyPrefix).unwrap()
+                TEST_SET.fuzzy_match(&["100", "main"], 1, 1, EndingType::WordBoundaryPrefix).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main", "stre"], 1, 1, EndingType::NonPrefix).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main", "stre"], 1, 1, EndingType::WordBoundaryPrefix).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main", "stre"], 1, 1, EndingType::AnyPrefix).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main", "street"], 1, 1, EndingType::WordBoundaryPrefix).unwrap(),
+                TEST_SET.fuzzy_match(&["100", "main", "street"], 1, 1, EndingType::AnyPrefix).unwrap(),
             ]
         );
     }

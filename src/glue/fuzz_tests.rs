@@ -69,6 +69,22 @@ fn glue_fuzztest_match_prefix() {
         if let Ok(res) = results {
             assert!(res.iter().filter(|result| phrase.starts_with(itertools::join(&result.phrase, " ").as_str())).count() > 0);
         }
+
+        let wb_results = SET.fuzzy_match_str(&damaged.as_str(), 1, 1, EndingType::WordBoundaryPrefix);
+        assert!(wb_results.is_ok());
+        if let Ok(res) = wb_results {
+            let prefix_match_results: Vec<_> = res.iter()
+                .filter(|result| phrase.starts_with(itertools::join(&result.phrase, " ").as_str()))
+                .collect();
+            // if the last word is complete, we should definitely match as above; if not, maybe maybe not
+            let words: Vec<_> = damaged.split(' ').collect();
+            let last_word = words.last().unwrap();
+            if &phrase.split(' ').nth(words.len() - 1).unwrap() == last_word {
+                assert!(prefix_match_results.len() > 0);
+            } else {
+                assert!(prefix_match_results.iter().all(|result| result.phrase.last().unwrap() == last_word || result.edit_distance > 0));
+            }
+        }
     }
 }
 
