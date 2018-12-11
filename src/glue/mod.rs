@@ -18,6 +18,9 @@ use ::phrase::query::{QueryPhrase, QueryWord};
 use ::fuzzy::{FuzzyMap, FuzzyMapBuilder};
 use regex;
 
+use std::{str, fmt};
+#[macro_use] mod enum_number;
+
 pub mod unicode_ranges;
 mod util;
 
@@ -211,11 +214,12 @@ pub struct FuzzyPhraseSet {
     max_edit_distance: u8,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize, Deserialize)]
-pub enum EndingType {
-    NonPrefix = 0,
-    AnyPrefix = 1,
-    WordBoundaryPrefix = 2,
+enum_number! {
+    EndingType {
+        NonPrefix = 0,
+        AnyPrefix = 1,
+        WordBoundaryPrefix = 2,
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
