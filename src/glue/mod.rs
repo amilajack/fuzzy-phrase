@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, hash_map};
+use std::collections::{BTreeMap, hash_map};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, BufReader, BufWriter};
@@ -9,6 +9,7 @@ use std::fmt::Debug;
 
 use serde_json;
 use fst::Streamer;
+use rustc_hash::FxHashMap;
 
 use ::prefix::{PrefixSet, PrefixSetBuilder};
 use ::phrase::{PhraseSet, PhraseSetBuilder};
@@ -20,10 +21,10 @@ use regex;
 pub mod unicode_ranges;
 mod util;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct WordReplacement {
-    from: String,
-    to: String
+    pub from: String,
+    pub to: String
 }
 
 #[derive(Default, Debug)]
@@ -165,6 +166,12 @@ impl FuzzyPhraseSetBuilder {
         prefix_set_builder.finish()?;
         fuzzy_map_builder.finish()?;
 
+        // for token-replacement words, we want to map the temporary ID to the final ID of the
+        // replacement target, rather than of the replacement source, so number those again
+        for replacement in &self.word_replacements {
+            tmpids_to_ids[self.words_to_tmpids[&replacement.from] as usize] = tmpids_to_ids[self.words_to_tmpids[&replacement.to] as usize];
+        }
+
         // next, renumber all of the current phrases with real rather than temp IDs
         for phrase in self.phrases.iter_mut() {
             for word_idx in (*phrase).iter_mut() {
@@ -199,6 +206,7 @@ pub struct FuzzyPhraseSet {
     phrase_set: PhraseSet,
     fuzzy_map: FuzzyMap,
     word_list: Vec<String>,
+    word_replacement_map: BTreeMap<u32, u32>,
     script_regex: regex::Regex,
     max_edit_distance: u8,
 }
@@ -219,7 +227,7 @@ pub struct FuzzyWindowResult {
 
 impl<'a, 'b> PartialEq<FuzzyMatchResult> for FuzzyWindowResult {
     fn eq(&self, other: &FuzzyMatchResult) -> bool {
-        self.edit_distance == other.edit_distance;
+        self.edit_distance == other.edit_distance &&
         self.phrase == other.phrase
     }
 }
@@ -238,7 +246,8 @@ impl FuzzyPhraseSet {
 
         let metadata_reader = BufReader::new(fs::File::open(directory.join(Path::new("metadata.json")))?);
         let metadata: FuzzyPhraseSetMetadata = serde_json::from_reader(metadata_reader)?;
-        if metadata != FuzzyPhraseSetMetadata::default() {
+        let default = FuzzyPhraseSetMetadata::default();
+        if metadata.index_type != default.index_type || metadata.format_version != default.format_version {
             return Err(Box::new(IoError::new(IoErrorKind::InvalidData, "Unexpected structure metadata")));
         }
 
@@ -279,8 +288,22 @@ impl FuzzyPhraseSet {
         let fuzzy_path = directory.join(Path::new("fuzzy"));
         let fuzzy_map = unsafe { FuzzyMap::from_path(&fuzzy_path) }?;
 
+        // the word replacements in the metadata are string to string, but we want ID to ID for
+        // the sake of speed, so use the prefix map to go from the former to the latter and put
+        // put them in a btree
+        let mut word_replacement_map: BTreeMap<u32, u32> = BTreeMap::new();
+        for word_replacement in &metadata.word_replacements {
+            let from = prefix_set.lookup(&word_replacement.from).id()
+                .ok_or_else(|| format!("Substitution from-word {} not in lexicon", word_replacement.from))?
+                .value() as u32;
+            let to = prefix_set.lookup(&word_replacement.to).id()
+                .ok_or_else(|| format!("Substitution to-word {} not in lexicon", word_replacement.to))?
+                .value() as u32;
+            word_replacement_map.insert(from, to);
+        }
+
         Ok(FuzzyPhraseSet {
-            prefix_set, phrase_set, fuzzy_map, word_list, script_regex, max_edit_distance
+            prefix_set, phrase_set, fuzzy_map, word_list, word_replacement_map, script_regex, max_edit_distance
         })
     }
 
@@ -294,7 +317,11 @@ impl FuzzyPhraseSet {
         let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
         for word in phrase {
             match self.prefix_set.lookup(word.as_ref()).id() {
-                Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id.value() as u32, 0)) },
+                Some(word_id) => {
+                    let id = word_id.value() as u32;
+                    let maybe_replaced = *self.word_replacement_map.get(&id).unwrap_or(&id);
+                    id_phrase.push(QueryWord::new_full(maybe_replaced, 0))
+                },
                 None => { return Ok(false) }
             }
         }
@@ -310,24 +337,34 @@ impl FuzzyPhraseSet {
     }
 
     pub fn contains_prefix<T: AsRef<str>>(&self, phrase: &[T]) -> Result<bool, Box<Error>> {
-        // strategy: get each word's ID from the prefix graph (or return false if any are missing)
-        // except for the last one; do a word prefix lookup instead and construct a prefix range
-        // and then look up that sequence with a prefix lookup in the phrase graph
-        let mut id_phrase: Vec<QueryWord> = Vec::with_capacity(phrase.len());
-        if phrase.len() > 0 {
-            let last_idx = phrase.len() - 1;
-            for word in phrase[..last_idx].iter() {
-                match self.prefix_set.lookup(word.as_ref()).id() {
-                    Some(word_id) => { id_phrase.push(QueryWord::new_full(word_id.value() as u32, 0)) },
-                    None => { return Ok(false) }
-                }
-            }
-            match self.prefix_set.lookup(phrase[last_idx].as_ref()).range() {
-                Some((word_id_start, word_id_end)) => { id_phrase.push(QueryWord::new_prefix((word_id_start.value() as u32, word_id_end.value() as u32))) },
+        // strategy: because of token replacement, the terminal word might have more than one
+        // possible word ID if the prefix range contains replaceable words; as such, rather
+        // than using PhraseSet's contains operation, we'll use the multi-path combination
+        // matcher as we do with fuzzy_match_prefix, but with a much-constrained search set
+        let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
+
+        if phrase.len() == 0 {
+            return Ok(false);
+        }
+
+        let last_idx = phrase.len() - 1;
+        for word in phrase[..last_idx].iter() {
+            match self.prefix_set.lookup(word.as_ref()).id() {
+                Some(word_id) => {
+                    let id = word_id.value() as u32;
+                    let maybe_replaced = *self.word_replacement_map.get(&id).unwrap_or(&id);
+                    word_possibilities.push(vec![QueryWord::new_full(maybe_replaced, 0)])
+                },
                 None => { return Ok(false) }
             }
         }
-        Ok(self.phrase_set.contains_prefix(QueryPhrase::new(&id_phrase)?)?)
+        match self.get_terminal_word_possibilities(phrase[last_idx].as_ref(), 0)? {
+            Some(possibilities) => word_possibilities.push(possibilities),
+            None => return Ok(false),
+        }
+
+        let phrase_matches = self.phrase_set.match_combinations_as_prefixes(&word_possibilities, 0)?;
+        Ok(phrase_matches.len() > 0)
     }
 
     // convenience method that splits the input string on the space character
@@ -349,13 +386,23 @@ impl FuzzyPhraseSet {
             } else {
                 let mut variants: Vec<QueryWord> = Vec::with_capacity(fuzzy_results.len());
                 for result in fuzzy_results {
-                    variants.push(QueryWord::new_full(result.id, result.edit_distance));
+                    let maybe_replaced = *self.word_replacement_map.get(&result.id).unwrap_or(&result.id);
+                    let already = variants.iter().any(|&x| match x {
+                        QueryWord::Full { id, .. } => id == maybe_replaced,
+                        _ => false
+                    });
+                    if !already {
+                        variants.push(QueryWord::new_full(maybe_replaced, result.edit_distance));
+                    }
                 }
                 Ok(Some(variants))
             }
         } else {
             match self.prefix_set.lookup(&word).id() {
-                Some(word_id) => { Ok(Some(vec![QueryWord::new_full(word_id.value() as u32, 0)])) },
+                Some(word_id) => {
+                    let id = word_id.value() as u32;
+                    let maybe_replaced = *self.word_replacement_map.get(&id).unwrap_or(&id);
+                    Ok(Some(vec![QueryWord::new_full(maybe_replaced, 0)])) },
                 None => { Ok(None) }
             }
         }
@@ -365,23 +412,57 @@ impl FuzzyPhraseSet {
     fn get_terminal_word_possibilities(&self, word: &str, edit_distance: u8) -> Result<Option<Vec<QueryWord>>, Box<Error>> {
         // last word: try both prefix and, if eligible, fuzzy lookup, and return nothing if both fail
         let mut last_variants: Vec<QueryWord> = Vec::new();
-        let found_prefix = if let Some((word_id_start, word_id_end)) = self.prefix_set.lookup(word).range() {
-            last_variants.push(QueryWord::new_prefix((word_id_start.value() as u32, word_id_end.value() as u32)));
-            true
-        } else {
-            false
-        };
+
+        let lookup = self.prefix_set.lookup(word);
+        if let Some((word_id_start, word_id_end)) = lookup.range() {
+            let found_range = (word_id_start.value() as u32, word_id_end.value() as u32);
+            let num_terminations = (found_range.1 - found_range.0 + 1) as usize;
+            let replacements: Vec<u32> = self.word_replacement_map
+                .range(found_range.0..=found_range.1)
+                // don't bother emitting a replacement if it would be covered by the prefix anyway
+                .filter_map(|(_key, &target)|
+                    if target < found_range.0 || target > found_range.1 {
+                        Some(target)
+                    } else {
+                        None
+                    }
+                ).collect();
+
+            // if everything within our range will get token-replaced, don't emit the unreplaced word
+            if num_terminations != replacements.len() {
+                // if there's just one word and it's final, emit a full_word
+                if lookup.has_continuations() {
+                    last_variants.push(QueryWord::new_prefix((found_range.0, found_range.1)));
+                } else {
+                    last_variants.push(QueryWord::new_full(found_range.0, 0));
+                }
+            }
+            for replacement in replacements {
+                let already = last_variants.iter().any(|&x| match x {
+                    QueryWord::Full { id, .. } => id == replacement,
+                    _ => false
+                });
+                if !already {
+                    last_variants.push(QueryWord::new_full(replacement, 0));
+                }
+            }
+        }
 
         // check if we actually want to fuzzy-match, if the word is made of the right kind of characters
         // and if it's more than one char long
         if edit_distance > 0 && self.can_fuzzy_match(word) && word.chars().nth(1).is_some() {
             let last_fuzzy_results = self.fuzzy_map.lookup(word, edit_distance, |id| &self.word_list[id as usize])?;
             for result in last_fuzzy_results {
-                if found_prefix && result.edit_distance == 0 {
-                    // if we found a prefix match, a full-word exact match is duplicative
-                    continue;
+                let maybe_replaced = *self.word_replacement_map.get(&result.id).unwrap_or(&result.id);
+                // skip adding this entry if it's in an already-identified range, or is a token
+                // replacement result; otherwise insert it into the set and push it to the output list
+                let already = last_variants.iter().any(|&x| match x {
+                    QueryWord::Full { id, .. } => id == maybe_replaced,
+                    QueryWord::Prefix { id_range, .. } => maybe_replaced >= id_range.0 && maybe_replaced <= id_range.1 
+                });
+                if !already {
+                    last_variants.push(QueryWord::new_full(maybe_replaced, result.edit_distance));
                 }
-                last_variants.push(QueryWord::new_full(result.id, result.edit_distance));
             }
         }
         if last_variants.len() > 0 {
@@ -678,7 +759,7 @@ impl FuzzyPhraseSet {
         };
 
         // fuzzy-lookup all the words, but only once apiece (per prefix-y-ness type)
-        let mut all_words: HashMap<(&str, bool), Vec<QueryWord>> = HashMap::new();
+        let mut all_words: FxHashMap<(&str, bool), Vec<QueryWord>> = FxHashMap::default();
         let mut indexed_phrases: Vec<(&[T], bool, usize)> = Vec::new();
         for (i, (phrase, ends_in_prefix)) in phrases.iter().enumerate() {
             let phrase = phrase.as_ref();
@@ -733,7 +814,7 @@ impl FuzzyPhraseSet {
         // shorter phrases that are prefixes of that longest phrase (and also not ends_with_prefix)
         // so that we can just recurse over the phrase graph for the longest phrase and catch
         // any non-prefix-terminal shorter phrases along the way
-        let mut collapsed: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut collapsed: FxHashMap<usize, Vec<usize>> = FxHashMap::default();
         let mut group: Vec<usize> = Vec::new();
         let mut ip_iter = indexed_phrases.iter().peekable();
         while let Some(item) = ip_iter.next() {
@@ -793,7 +874,7 @@ impl FuzzyPhraseSet {
             // prefix-y-nesses. Any results we get back of the same length and prefix-y-ness
             // should be ascribed to their matching entries in the cluster so they can be inserted
             // into the right output slot.
-            let length_map: HashMap<(usize, bool), usize> = all_idxes.iter().map(
+            let length_map: FxHashMap<(usize, bool), usize> = all_idxes.iter().map(
                 |&idx| ((phrases[idx].0.as_ref().len(), phrases[idx].1), idx)
             ).collect();
 
@@ -821,7 +902,7 @@ impl FuzzyPhraseSet {
 }
 
 #[cfg(test)]
-mod tests {
+mod basic_tests {
     extern crate tempfile;
     extern crate lazy_static;
 
@@ -1107,22 +1188,7 @@ mod tests {
             ]
         );
     }
-
-    #[test]
-    fn load_word_replacements_test() -> () {
-        let dir = tempfile::tempdir().unwrap();
-        let mut builder = FuzzyPhraseSetBuilder::new(&dir.path()).unwrap();
-
-        let test_word_replacement_list = vec![WordReplacement { from: "Street".to_string(), to: "Str".to_string()}];
-        builder.load_word_replacements(test_word_replacement_list);
-        builder.finish().unwrap();
-
-        let word_replacement_reader = BufReader::new(fs::File::open(&dir.path().join(Path::new("metadata.json"))).unwrap());
-
-        let test_word_replacement: FuzzyPhraseSetMetadata = serde_json::from_reader(word_replacement_reader).unwrap();
-
-        assert_eq!(test_word_replacement.word_replacements, [ WordReplacement { from: "Street".to_string(), to: "Str".to_string() }]);
-    }
 }
 
+#[cfg(test)] mod replacement_tests;
 #[cfg(test)] mod fuzz_tests;
