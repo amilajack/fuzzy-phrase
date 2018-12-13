@@ -77,7 +77,7 @@ pub fn benchmark(c: &mut Criterion) {
         let mut cycle = damaged_phrases.iter().cycle();
         // the closure based to b.iter is the thing that will actually be timed; everything before
         // that is untimed per-benchmark setup
-        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1));
+        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1, EndingType::NonPrefix));
     }));
 
     // data is shadowed here for ease of copying and pasting, but this is a new clone
@@ -96,7 +96,7 @@ pub fn benchmark(c: &mut Criterion) {
         let mut cycle = damaged_phrases.iter().cycle();
         // the closure based to b.iter is the thing that will actually be timed; everything before
         // that is untimed per-benchmark setup
-        b.iter(|| data.set.fuzzy_match_prefix_str(cycle.next().unwrap(), 1, 1));
+        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1, EndingType::AnyPrefix));
     }));
 
     let data = shared_data.clone();
@@ -113,7 +113,7 @@ pub fn benchmark(c: &mut Criterion) {
         let mut cycle = damaged_phrases.iter().cycle();
         // the closure based to b.iter is the thing that will actually be timed; everything before
         // that is untimed per-benchmark setup
-        b.iter(|| data.set_with_replacements.fuzzy_match_prefix_str(cycle.next().unwrap(), 1, 1));
+        b.iter(|| data.set_with_replacements.fuzzy_match_str(cycle.next().unwrap(), 1, 1, EndingType::AnyPrefix));
     }));
 
     let data = shared_data.clone();
@@ -121,7 +121,7 @@ pub fn benchmark(c: &mut Criterion) {
         let lt_data = get_data("phrase", "lt", "lt", "latn", true);
         let mut cycle = lt_data.iter().cycle();
 
-        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1));
+        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1, EndingType::NonPrefix));
     }));
 
     let data = shared_data.clone();
@@ -129,7 +129,7 @@ pub fn benchmark(c: &mut Criterion) {
         let ua_data = get_data("phrase", "ua", "uk", "cyrl", true);
         let mut cycle = ua_data.iter().cycle();
 
-        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1));
+        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1, EndingType::NonPrefix));
     }));
 
     let data = shared_data.clone();
@@ -141,7 +141,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         let mut cycle = garbage_phrases.iter().cycle();
 
-        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1));
+        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1, EndingType::NonPrefix));
     }));
 
     let data = shared_data.clone();
@@ -153,7 +153,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         let mut cycle = garbage_phrases.iter().cycle();
 
-        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1));
+        b.iter(|| data.set.fuzzy_match_str(cycle.next().unwrap(), 1, 1, EndingType::NonPrefix));
     }));
 
     // these next few will construct some phrases that have fake additional cities/states/zips
@@ -187,7 +187,7 @@ pub fn benchmark(c: &mut Criterion) {
             let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
             for start in 0..tokens.len() {
                 for end in start..tokens.len() {
-                    data.set.fuzzy_match(&tokens[start..(end + 1)], 1, 1).unwrap();
+                    data.set.fuzzy_match(&tokens[start..(end + 1)], 1, 1, EndingType::NonPrefix).unwrap();
                 }
             }
         });
@@ -200,10 +200,10 @@ pub fn benchmark(c: &mut Criterion) {
 
         b.iter(|| {
             let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
-            let mut variants: Vec<(Vec<&str>, bool)> = Vec::new();
+            let mut variants: Vec<(Vec<&str>, EndingType)> = Vec::new();
             for start in 0..tokens.len() {
                 for end in start..tokens.len() {
-                    variants.push((tokens[start..(end + 1)].to_vec(), false));
+                    variants.push((tokens[start..(end + 1)].to_vec(), EndingType::NonPrefix));
                 }
             }
             data.set.fuzzy_match_multi(variants.as_slice(), 1, 1).unwrap();
@@ -217,7 +217,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         b.iter(|| {
             let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
-            data.set.fuzzy_match_windows(tokens.as_slice(), 1, 1, false).unwrap();
+            data.set.fuzzy_match_windows(tokens.as_slice(), 1, 1, EndingType::NonPrefix).unwrap();
         });
     }));
 
@@ -247,10 +247,10 @@ pub fn benchmark(c: &mut Criterion) {
 
         b.iter(|| {
             let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
-            let mut variants: Vec<(Vec<&str>, bool)> = Vec::new();
+            let mut variants: Vec<(Vec<&str>, EndingType)> = Vec::new();
             for start in 0..tokens.len() {
                 for end in start..tokens.len() {
-                    variants.push((tokens[start..(end + 1)].to_vec(), false));
+                    variants.push((tokens[start..(end + 1)].to_vec(), EndingType::NonPrefix));
                 }
             }
             data.set.fuzzy_match_multi(variants.as_slice(), 0, 0).unwrap();
@@ -264,7 +264,7 @@ pub fn benchmark(c: &mut Criterion) {
 
         b.iter(|| {
             let tokens: Vec<_> = cycle.next().unwrap().split(" ").collect();
-            data.set.fuzzy_match_windows(tokens.as_slice(), 0, 0, false).unwrap();
+            data.set.fuzzy_match_windows(tokens.as_slice(), 0, 0, EndingType::NonPrefix).unwrap();
         });
     }));
 
