@@ -348,7 +348,7 @@ impl FuzzyPhraseSet {
                 // strategy: because of token replacement, the terminal word might have more than one
                 // possible word ID if the prefix range contains replaceable words; as such, rather
                 // than using PhraseSet's contains operation, we'll use the multi-path combination
-                // matcher as we do with fuzzy_match_prefix, but with a much-constrained search set
+                // matcher as we do with fuzzy_match, but with a much-constrained search set
                 let mut word_possibilities: Vec<Vec<QueryWord>> = Vec::with_capacity(phrase.len());
 
                 if phrase.len() == 0 {
@@ -757,7 +757,7 @@ impl FuzzyPhraseSet {
         // The input is a slice of tuples of a phrase (slice of str-ish things) and a bool
         // representing ends_in_prefix-ness. The output here will be mapped positionally to the
         // input, so it'll be a vector of the same size as the input slice, where each position
-        // should contain the same results as a fuzzy_match or fuzzy_match_prefix of that phrase.
+        // should contain the same results as a fuzzy_match of that phrase.
 
         if phrases.len() == 0 {
             return Ok(Vec::new());
