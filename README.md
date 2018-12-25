@@ -9,28 +9,32 @@ fuzzy-phrase is a fuzzy (and exact) phrase matching engine written in Rust and b
 # Getting started
 
 fuzzy-phrase is a standard Rust crate. It isn’t currently published on crates.io, so to get started you can add an entry to your `Cargo.toml` as follows:
-
-    fuzzy-phrase = { git = "https://github.com/mapbox/fuzzy-phrase", rev = "master" }
+```toml
+fuzzy-phrase = { git = "https://github.com/mapbox/fuzzy-phrase", rev = "master" }
+```
 
 To use it, you’ll build a structure by instantiating a `glue::FuzzyPhraseSetBuilder` and add some phrases to it. You can then load the built structure and query it for approximate matches:
+```rust
+let mut builder = FuzzyPhraseSetBuilder::new(&DIR.path()).unwrap();
+builder.insert_str("100 main street").unwrap();
+builder.insert_str("200 main street").unwrap();
+builder.insert_str("100 main ave").unwrap();
+builder.insert_str("300 mlk blvd").unwrap();
+builder.finish().unwrap();
 
-    let mut builder = FuzzyPhraseSetBuilder::new(&DIR.path()).unwrap();
-    builder.insert_str("100 main street").unwrap();
-    builder.insert_str("200 main street").unwrap();
-    builder.insert_str("100 main ave").unwrap();
-    builder.insert_str("300 mlk blvd").unwrap();
-    builder.finish().unwrap();
-    
-    let set = FuzzyPhraseSet::from_path(&DIR.path()).unwrap();
-    println!("{:?}", SET.fuzzy_match(&["100", "man", "street"], 1, 1).unwrap());
+let set = FuzzyPhraseSet::from_path(&DIR.path()).unwrap();
+println!("{:?}", SET.fuzzy_match(&["100", "man", "street"], 1, 1).unwrap());
+```
 
 fuzzy-phrase uses standard Rust tests, so you can run the test suite using
-
-    cargo test
+```bash
+cargo test
+```
 
 and run benchmarks (implemented using `criterion`) using
-
-    cargo bench
+```bash
+cargo bench
+```
 
 # How it works
 
